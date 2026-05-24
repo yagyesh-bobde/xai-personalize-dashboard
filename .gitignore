@@ -1,0 +1,31 @@
+# local-only state — never commit
+data/
+!data/.gitkeep
+
+# logs / debug
+*.log
+*.err
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# macos
+.DS_Store
+
+# editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# uploads (also covered by data/, but explicit for safety)
+uploads/
+
+# any local env files
+.env
+.env.local
