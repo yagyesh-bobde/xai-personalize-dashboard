@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>xai-personalize-dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- LEFT RAIL -->
+    <aside class="rail">
+      <header class="rail-head">
+        <div class="logo">
+          <span class="logo-mark">▮</span>
+          <span class="logo-text">xai<span class="logo-dot">.</span>personalize</span>
+        </div>
+        <div class="rail-user" id="user-handle">@—</div>
+      </header>
+
+      <nav class="nav" id="nav">
+        <a href="#foryou"    class="nav-item active" data-section="foryou">
+          <span class="nav-key">01</span><span class="nav-name">for you</span>
+          <span class="nav-count" data-count="foryou">—</span>
+        </a>
+        <a href="#trending"  class="nav-item" data-section="trending">
+          <span class="nav-key">02</span><span class="nav-name">trending</span>
+          <span class="nav-count" data-count="trending">—</span>
+        </a>
+        <a href="#drafts"    class="nav-item" data-section="drafts">
+          <span class="nav-key">03</span><span class="nav-name">drafts</span>
+          <span class="nav-count" data-count="drafts">—</span>
+        </a>
+        <a href="#compose"   class="nav-item" data-section="compose">
+          <span class="nav-key">04</span><span class="nav-name">compose</span>
+          <span class="nav-count">new</span>
+        </a>
+        <a href="#scheduled" class="nav-item" data-section="scheduled">
+          <span class="nav-key">05</span><span class="nav-name">scheduled</span>
+          <span class="nav-count" data-count="scheduled">—</span>
+        </a>
+        <a href="#history"   class="nav-item" data-section="history">
+          <span class="nav-key">06</span><span class="nav-name">history</span>
+          <span class="nav-count" data-count="history">—</span>
+        </a>
+        <a href="#agent"     class="nav-item" data-section="agent">
+          <span class="nav-key">07</span><span class="nav-name">agent</span>
+          <span class="nav-count">edit</span>
+        </a>
+      </nav>
+
+      <section class="rail-block">
+        <div class="rail-label">interest signature</div>
+        <div class="rail-meta" id="sig-meta">—</div>
+        <div class="rail-sub">bookmarked</div>
+        <div class="chips" id="sig-bookmark-authors"></div>
+        <div class="rail-sub">liked</div>
+        <div class="chips" id="sig-fav-authors"></div>
+        <div class="rail-sub">keywords</div>
+        <div class="chips" id="sig-keywords"></div>
+      </section>
+
+      <section class="rail-block">
+        <div class="rail-label">counts</div>
+        <div class="kv" id="sig-counts"></div>
+      </section>
+
+      <footer class="rail-foot">
+        <div class="kv">
+          <div><span>server</span><span id="server-status" class="ok">checking…</span></div>
+          <div><span>updated</span><span id="updated">never</span></div>
+        </div>
+        <button id="refresh-btn" class="btn primary block" type="button">
+          <span class="btn-key">⏎</span><span>refresh pipeline</span>
+        </button>
+      </footer>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <header class="main-head">
+        <div class="main-head-left">
+          <span class="crumb" id="section-title">for you</span>
+          <span class="crumb-sep">/</span>
+          <span class="crumb-sub" id="section-sub">curated against your signature</span>
+        </div>
+        <div class="main-head-right">
+          <span class="server-dot" id="server-dot" title="server status"></span>
+        </div>
+      </header>
+
+      <!-- FOR YOU -->
+      <section class="section" id="section-foryou">
+        <div class="feed-col" id="list-explore"></div>
+        <div class="load-more-wrap" id="loadmore-explore-wrap">
+          <div class="load-more-meta">
+            <span id="loadmore-explore-status">—</span>
+          </div>
+          <button class="btn primary block" id="loadmore-explore" type="button">
+            <span class="btn-key">↓</span><span>load more</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- TRENDING -->
+      <section class="section hidden" id="section-trending">
+        <div class="banner">
+          <div class="banner-num">02</div>
+          <div>
+            <div class="banner-title">outside your signature</div>
+            <div class="banner-sub">ranked by raw engagement — useful for spotting broader-zeitgeist conversations.</div>
+          </div>
+        </div>
+        <div class="feed-col" id="list-trending"></div>
+        <div class="load-more-wrap" id="loadmore-trending-wrap">
+          <div class="load-more-meta">
+            <span id="loadmore-trending-status">—</span>
+          </div>
+          <button class="btn primary block" id="loadmore-trending" type="button">
+            <span class="btn-key">↓</span><span>load more</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- DRAFTS -->
+      <section class="section hidden" id="section-drafts">
+        <div class="tab-bar" id="draft-tabs">
+          <button class="tab-btn active" data-tab="posts">posts<span class="tab-count" data-count="posts">—</span></button>
+          <button class="tab-btn"        data-tab="replies">replies<span class="tab-count" data-count="replies">—</span></button>
+          <button class="tab-btn"        data-tab="quotes">quote-tweets<span class="tab-count" data-count="quotes">—</span></button>
+        </div>
+        <div class="grid-drafts" id="list-posts"></div>
+        <div class="grid-drafts hidden" id="list-replies"></div>
+        <div class="grid-drafts hidden" id="list-quotes"></div>
+      </section>
+
+      <!-- COMPOSE -->
+      <section class="section hidden" id="section-compose">
+        <div class="compose-card" id="compose-card">
+          <div class="compose-meta">
+            <span class="compose-label">new tweet</span>
+            <span class="compose-as">posting as <strong id="compose-as">@—</strong></span>
+          </div>
+          <textarea id="compose-text" rows="6" placeholder="lowercase opener. drop a real number or tool. close with lmk.  ⌘V to paste an image."></textarea>
+          <div class="compose-row">
+            <div class="image-tray" id="compose-images" data-tray="compose"></div>
+          </div>
+          <div class="compose-actions">
+            <label class="btn ghost upload-btn">
+              <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple data-upload-target="compose" hidden>
+              <span class="btn-key">⊕</span><span>image</span>
+            </label>
+            <div class="spacer"></div>
+            <span class="char-count" id="compose-count">0 / 280</span>
+            <button class="btn ghost" data-compose-post><span class="btn-key">↪</span><span>post now</span></button>
+            <button class="btn ghost" data-schedule="compose"><span class="btn-key">⏱</span><span>schedule…</span></button>
+            <button class="btn primary queue-btn" data-compose-queue title="queue 3h after the latest pending item"><span class="btn-key">⏎</span><span data-queue-label>queue +3h</span></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCHEDULED -->
+      <section class="section hidden" id="section-scheduled">
+        <div class="banner">
+          <div class="banner-num">05</div>
+          <div>
+            <div class="banner-title">scheduled queue</div>
+            <div class="banner-sub">background worker fires due posts every ~15s. cancel any time.</div>
+          </div>
+        </div>
+        <div class="grid-drafts" id="list-scheduled"></div>
+      </section>
+
+      <!-- HISTORY -->
+      <section class="section hidden" id="section-history">
+        <div class="banner">
+          <div class="banner-num">06</div>
+          <div>
+            <div class="banner-title">posted history</div>
+            <div class="banner-sub">last 200 actions — manual and scheduled.</div>
+          </div>
+        </div>
+        <div class="grid-drafts" id="list-history"></div>
+      </section>
+      <!-- AGENT -->
+      <section class="section hidden" id="section-agent">
+        <div class="banner">
+          <div class="banner-num">07</div>
+          <div>
+            <div class="banner-title">agent persona</div>
+            <div class="banner-sub">edit your voice agent <code id="agent-path-inline">…</code> · study new X profiles to extend voice neighborhood.</div>
+          </div>
+        </div>
+
+        <div class="agent-block">
+          <div class="agent-block-head">
+            <div class="agent-block-title">agent prompt</div>
+            <div class="agent-block-meta">
+              <span id="agent-path" class="muted-mono">—</span>
+              <span class="muted-mono"> · saved </span>
+              <span id="agent-mtime" class="muted-mono">—</span>
+              <span id="agent-dirty" class="dirty-flag hidden">● unsaved</span>
+            </div>
+          </div>
+          <textarea id="agent-textarea" spellcheck="false" placeholder="loading…"></textarea>
+          <div class="agent-actions">
+            <span id="agent-bytes" class="muted-mono">— bytes</span>
+            <div class="spacer"></div>
+            <button class="btn ghost" id="agent-discard"><span class="btn-key">↺</span><span>discard changes</span></button>
+            <button class="btn primary" id="agent-save" disabled><span class="btn-key">⏎</span><span>save</span></button>
+          </div>
+        </div>
+
+        <div class="agent-block">
+          <div class="agent-block-head">
+            <div class="agent-block-title">voice neighborhood</div>
+            <div class="agent-block-meta"><span class="muted-mono">profiles currently mined into the agent</span></div>
+          </div>
+          <div class="profile-grid" id="agent-profiles"></div>
+        </div>
+
+        <div class="agent-block">
+          <div class="agent-block-head">
+            <div class="agent-block-title">study new profile</div>
+            <div class="agent-block-meta"><span class="muted-mono">fetches ~50 posts · runs claude analysis · merges into your agent .md</span></div>
+          </div>
+          <div class="study-row">
+            <span class="study-at">@</span>
+            <input id="study-handle" type="text" autocomplete="off" spellcheck="false" placeholder="handle (no @)" />
+            <button class="btn primary" id="study-go"><span class="btn-key">⏎</span><span>study</span></button>
+          </div>
+          <pre id="study-log" class="study-log hidden"></pre>
+          <div id="study-result" class="study-result hidden"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- SCHEDULE MODAL -->
+  <div class="modal hidden" id="schedule-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title">schedule</div>
+        <button class="modal-x" id="schedule-close" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="modal-label">when (local)</label>
+        <input type="datetime-local" id="schedule-when" />
+        <div class="quick-times" id="schedule-quick">
+          <button data-mins="15">+15m</button>
+          <button data-mins="60">+1h</button>
+          <button data-mins="180">+3h</button>
+          <button data-mins="480">+8h</button>
+          <button data-mins="1440">+24h</button>
+        </div>
+        <div class="modal-preview" id="schedule-preview"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="schedule-cancel">cancel</button>
+        <button class="btn primary" id="schedule-confirm">schedule it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST + OVERLAY -->
+  <div id="toast" class="toast"></div>
+  <div id="overlay" class="overlay hidden">
+    <div class="overlay-inner">
+      <div class="spinner"></div>
+      <div class="overlay-msg">refreshing — fetching signal + drafting…</div>
+      <div class="overlay-sub muted">~30–60 seconds.</div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
