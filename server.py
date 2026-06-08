@@ -35,6 +35,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+import blog as blog_mod
+
 ROOT      = Path(__file__).resolve().parent
 DATA_DIR  = ROOT / "data"
 DATA      = DATA_DIR / "dashboard_data.json"
@@ -651,6 +653,18 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send_json(500, {"error": str(e)})
 
+        if path == "/blog/data":
+            try:
+                return self._send_json(200, blog_mod.load_state())
+            except Exception as e:
+                return self._send_json(500, {"error": str(e)})
+
+        if path == "/blog-agent":
+            try:
+                return self._send_json(200, blog_mod.read_agent())
+            except Exception as e:
+                return self._send_json(500, {"error": str(e)})
+
         if path.startswith("/static/"):
             name = path[len("/static/"):]
             mime = (
@@ -668,6 +682,13 @@ class Handler(BaseHTTPRequestHandler):
                     "gif": "image/gif", "webp": "image/webp"}.get(ext, "application/octet-stream")
             return self._send_file(UPLOADS / name, mime)
 
+        if path.startswith("/thumbnails/"):
+            name = Path(path[len("/thumbnails/"):]).name
+            ext = name.lower().rsplit(".", 1)[-1]
+            mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "gif": "image/gif", "webp": "image/webp"}.get(ext, "application/octet-stream")
+            return self._send_file(blog_mod.THUMBNAILS_DIR / name, mime)
+
         self.send_error(404)
 
     def do_DELETE(self):
@@ -683,6 +704,21 @@ class Handler(BaseHTTPRequestHandler):
                     save_json(SCHED, queue)
                     return self._send_json(200, {"ok": True, "id": sid})
             return self._send_json(404, {"ok": False, "error": "not found or already fired"})
+
+        if path.startswith("/blog/projects/"):
+            pid = path[len("/blog/projects/"):]
+            state = blog_mod.load_state()
+            ok = blog_mod.remove_project(state, pid)
+            return self._send_json(200 if ok else 404,
+                                   {"ok": ok, "id": pid, "error": None if ok else "not found"})
+
+        if path.startswith("/blog/ideas/"):
+            iid = path[len("/blog/ideas/"):]
+            state = blog_mod.load_state()
+            ok = blog_mod.delete_idea(state, iid)
+            return self._send_json(200 if ok else 404,
+                                   {"ok": ok, "id": iid, "error": None if ok else "not found"})
+
         self.send_error(404)
 
     def do_POST(self):
@@ -866,6 +902,177 @@ class Handler(BaseHTTPRequestHandler):
             queue.insert(0, entry)
             save_json(SCHED, queue)
             return self._send_json(200, {"ok": True, "scheduled": entry})
+
+        # ── blog ideas routes ──
+
+        if path == "/blog/scrape-medium":
+            try:
+                state = blog_mod.load_state()
+                posts = blog_mod.refresh_medium(state)
+                return self._send_json(200, {
+                    "ok": True, "posts": posts,
+                    "stripped_archive_ideas": True,
+                    "state": state,
+                })
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/blog/projects":
+            project_path = (body.get("path") or "").strip()
+            name = (body.get("name") or "").strip() or None
+            if not project_path:
+                return self._send_json(400, {"ok": False, "error": "path required"})
+            state = blog_mod.load_state()
+            entry = blog_mod.add_project(state, project_path, name)
+            sig = blog_mod.project_signal(entry["path"])
+            return self._send_json(200, {"ok": True, "project": entry, "signal": sig})
+
+        if path == "/blog/projects/scan":
+            project_id = (body.get("id") or "").strip()
+            state = blog_mod.load_state()
+            proj = next((p for p in state["projects"] if p["id"] == project_id), None)
+            if not proj:
+                return self._send_json(404, {"ok": False, "error": "project not found"})
+            sig = blog_mod.project_signal(proj["path"])
+            return self._send_json(200, {"ok": True, "signal": sig})
+
+        if path == "/blog/generate-ideas":
+            state = blog_mod.load_state()
+            try:
+                ideas = blog_mod.generate_ideas(state)
+                return self._send_json(200, {"ok": True, "ideas": ideas, "state": state})
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/blog/clear-ideas":
+            state = blog_mod.load_state()
+            removed = blog_mod.clear_ideas(state, keep_finalized=True)
+            return self._send_json(200, {"ok": True, "removed": removed, "state": state})
+
+        if path == "/blog/thumbnail":
+            draft_id = (body.get("draft_id") or "").strip()
+            if not draft_id:
+                return self._send_json(400, {"ok": False, "error": "draft_id required"})
+            additional   = (body.get("additional_text") or "").strip()
+            ref_b64      = body.get("ref_image_b64") or None
+            ref_name     = body.get("ref_image_name") or None
+            prompt_over  = body.get("prompt_override") or None
+            state = blog_mod.load_state()
+            try:
+                result = blog_mod.generate_thumbnail(
+                    state, draft_id,
+                    additional_text=additional,
+                    ref_image_b64=ref_b64,
+                    ref_image_name=ref_name,
+                    prompt_override=prompt_over,
+                )
+                return self._send_json(200, result)
+            except ValueError as e:
+                return self._send_json(404, {"ok": False, "error": str(e)})
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/blog/publish":
+            draft_id = (body.get("draft_id") or "").strip()
+            if not draft_id:
+                return self._send_json(400, {"ok": False, "error": "draft_id required"})
+            state = blog_mod.load_state()
+            try:
+                result = blog_mod.publish_draft(state, draft_id)
+                return self._send_json(200, result)
+            except ValueError as e:
+                return self._send_json(404, {"ok": False, "error": str(e)})
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/blog/research-trending":
+            state = blog_mod.load_state()
+            try:
+                ideas = blog_mod.research_trending_ideas(state)
+                return self._send_json(200, {"ok": True, "ideas": ideas, "state": state})
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/blog/finalize":
+            idea_id = (body.get("id") or "").strip()
+            state = blog_mod.load_state()
+            idea = blog_mod.finalize_idea(state, idea_id)
+            if not idea:
+                return self._send_json(404, {"ok": False, "error": "idea not found"})
+            return self._send_json(200, {"ok": True, "idea": idea})
+
+        if path == "/blog/unfinalize":
+            idea_id = (body.get("id") or "").strip()
+            state = blog_mod.load_state()
+            idea = blog_mod.unfinalize_idea(state, idea_id)
+            if not idea:
+                return self._send_json(404, {"ok": False, "error": "idea not found"})
+            return self._send_json(200, {"ok": True, "idea": idea})
+
+        if path == "/blog/variations":
+            idea_id = (body.get("id") or "").strip()
+            state = blog_mod.load_state()
+            try:
+                variations = blog_mod.generate_variations(state, idea_id)
+                return self._send_json(200, {
+                    "ok": True, "variations": variations,
+                    "idea_id": idea_id, "state": state,
+                })
+            except ValueError as e:
+                return self._send_json(404, {"ok": False, "error": str(e)})
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/blog/draft":
+            idea_id = (body.get("id") or "").strip()
+            override_title = (body.get("title") or "").strip() or None
+            state = blog_mod.load_state()
+            try:
+                draft = blog_mod.generate_draft(state, idea_id, override_title=override_title)
+                return self._send_json(200, {
+                    "ok": True, "draft": draft, "state": state,
+                })
+            except ValueError as e:
+                return self._send_json(404, {"ok": False, "error": str(e)})
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/blog/draft/save":
+            draft_id = (body.get("id") or "").strip()
+            content = body.get("content") or ""
+            new_title = body.get("title")
+            try:
+                state = blog_mod.load_state()
+                draft = blog_mod.update_draft_content(state, draft_id, content, title=new_title)
+                return self._send_json(200, {"ok": True, "draft": draft})
+            except ValueError as e:
+                return self._send_json(404, {"ok": False, "error": str(e)})
+
+        if path == "/blog/comment":
+            draft_id = (body.get("draft_id") or "").strip()
+            text = (body.get("text") or "").strip()
+            if not text:
+                return self._send_json(400, {"ok": False, "error": "empty comment"})
+            state = blog_mod.load_state()
+            try:
+                draft = blog_mod.add_comment_and_revise(state, draft_id, text)
+                return self._send_json(200, {"ok": True, "draft": draft})
+            except ValueError as e:
+                return self._send_json(404, {"ok": False, "error": str(e)})
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e), "draft_id": draft_id})
+
+        if path == "/blog-agent":
+            new_content = body.get("content")
+            if not isinstance(new_content, str) or not new_content.strip():
+                return self._send_json(400, {"ok": False, "error": "content required"})
+            try:
+                meta = blog_mod.write_agent(new_content)
+                return self._send_json(200, {"ok": True, **meta})
+            except ValueError as e:
+                return self._send_json(400, {"ok": False, "error": str(e)})
+            except Exception as e:
+                return self._send_json(500, {"ok": False, "error": str(e)})
 
         self.send_error(404)
 

@@ -50,6 +50,14 @@
           <span class="nav-key">07</span><span class="nav-name">agent</span>
           <span class="nav-count">edit</span>
         </a>
+        <a href="#blog"      class="nav-item" data-section="blog">
+          <span class="nav-key">08</span><span class="nav-name">blog ideas</span>
+          <span class="nav-count" data-count="blog">—</span>
+        </a>
+        <a href="#studio"    class="nav-item" data-section="studio">
+          <span class="nav-key">09</span><span class="nav-name">blog studio</span>
+          <span class="nav-count" data-count="studio">—</span>
+        </a>
       </nav>
 
       <section class="rail-block">
@@ -237,7 +245,153 @@
         </div>
       </section>
 
+      <!-- BLOG IDEAS -->
+      <section class="section hidden" id="section-blog">
+        <div class="banner">
+          <div class="banner-num">08</div>
+          <div>
+            <div class="banner-title">blog ideas</div>
+            <div class="banner-sub">scrape <code>medium.com/@bobde-yagyesh</code> · track project repos · generate topics · variations · drafts · comment-driven revision. tied to the <code>blog-writer</code> agent.</div>
+          </div>
+        </div>
+
+        <div class="blog-toolbar">
+          <span class="toolbar-label">sources</span>
+          <button class="btn ghost" id="blog-scrape"><span class="btn-key">↓</span><span>refresh from medium</span></button>
+          <button class="btn primary" id="blog-generate" title="generate fresh ideas (wipes non-finalized list first)"><span class="btn-key">✦</span><span>generate fresh ideas</span></button>
+          <button class="btn ghost" id="blog-research" title="scout reddit + x for trending posts in your lane, reframe as ideas"><span class="btn-key">🔭</span><span>research trending</span></button>
+          <button class="btn ghost" id="blog-clear" title="wipe all non-finalized ideas"><span class="btn-key">✕</span><span>clear list</span></button>
+          <div class="spacer"></div>
+          <button class="btn ghost" id="blog-edit-agent" title="open agent file in section 07's editor (no — separate editor below)"><span class="btn-key">✎</span><span>edit blog-writer agent</span></button>
+        </div>
+
+        <div class="blog-layout" id="blog-layout">
+          <div>
+            <div class="idea-grid" id="idea-grid"></div>
+            <div class="ws-empty hidden" id="blog-empty">no ideas yet — hit <strong>refresh from medium</strong> to seed, or <strong>generate fresh ideas</strong>.</div>
+
+            <div id="blog-workspace-wrap"></div>
+          </div>
+
+          <aside class="side-stack">
+            <div class="projects-panel" id="projects-panel">
+              <h4>tracked project repos</h4>
+              <div class="projects-sub">recent commits + readme h1 used as idea seed material.</div>
+              <div class="projects-list" id="projects-list"></div>
+              <div class="project-add-form" id="project-add-form">
+                <input id="project-path" type="text" autocomplete="off" spellcheck="false" placeholder="/path/to/repo" />
+                <input id="project-name" type="text" autocomplete="off" spellcheck="false" placeholder="name (optional)" />
+                <button class="btn primary" id="project-add-btn"><span class="btn-key">⏎</span><span>add</span></button>
+              </div>
+            </div>
+
+            <div class="projects-panel" id="archive-panel">
+              <h4>published archive <span class="archive-count" id="archive-count">0</span></h4>
+              <div class="projects-sub">these are already shipped. the generator uses them as <strong>avoid-these</strong> context — they will not be proposed as ideas.</div>
+              <div class="archive-list" id="archive-list"></div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="agent-block" id="blog-agent-block">
+          <div class="agent-block-head">
+            <div class="agent-block-title">blog-writer agent prompt</div>
+            <div class="agent-block-meta">
+              <span id="blog-agent-path" class="muted-mono">—</span>
+              <span class="muted-mono"> · saved </span>
+              <span id="blog-agent-mtime" class="muted-mono">—</span>
+              <span id="blog-agent-dirty" class="dirty-flag hidden">● unsaved</span>
+            </div>
+          </div>
+          <textarea id="blog-agent-textarea" spellcheck="false" placeholder="loading…"></textarea>
+          <div class="agent-actions">
+            <span id="blog-agent-bytes" class="muted-mono">— bytes</span>
+            <div class="spacer"></div>
+            <button class="btn ghost" id="blog-agent-discard"><span class="btn-key">↺</span><span>discard changes</span></button>
+            <button class="btn primary" id="blog-agent-save" disabled><span class="btn-key">⏎</span><span>save</span></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section hidden" id="section-studio">
+        <div class="banner">
+          <div class="banner-num">09</div>
+          <div>
+            <div class="banner-title">blog studio</div>
+            <div class="banner-sub">finalized topics · auto-generated drafts + 10 title variations · pick a title · comment to revise · revision history per blog.</div>
+          </div>
+        </div>
+
+        <div class="studio-layout">
+          <aside class="studio-sidebar">
+            <div class="studio-sidebar-head">
+              <h4>finalized blogs <span class="archive-count" id="studio-count">0</span></h4>
+              <div class="projects-sub">click a blog to open it. unfinalize from inside.</div>
+            </div>
+            <div class="studio-list" id="studio-list"></div>
+          </aside>
+
+          <div class="studio-main" id="studio-main">
+            <div class="ws-empty" id="studio-empty" style="padding:40px; text-align:center;">
+              no finalized blogs yet — go to <strong>08 blog ideas</strong>, hit <strong>finalize</strong> on an idea, and it'll land here with a draft + 10 title variations ready.
+            </div>
+          </div>
+        </div>
+      </section>
+
     </main>
+  </div>
+
+  <!-- BLOG FULL PREVIEW MODAL -->
+  <div class="modal modal-fullscreen hidden" id="preview-modal">
+    <div class="preview-shell">
+      <div class="preview-topbar">
+        <div class="preview-crumb">
+          <span class="preview-crumb-label">full preview</span>
+          <span class="preview-crumb-meta" id="preview-meta"></span>
+        </div>
+        <button class="preview-close" id="preview-close" type="button" title="close (esc)">
+          <span>close</span><span class="preview-x">×</span>
+        </button>
+      </div>
+      <div class="preview-scroll">
+        <article class="preview-article" id="preview-article"></article>
+      </div>
+    </div>
+  </div>
+
+  <!-- THUMBNAIL MODAL -->
+  <div class="modal hidden" id="thumb-modal">
+    <div class="modal-card" style="max-width: 640px;">
+      <div class="modal-head">
+        <div class="modal-title">generate thumbnail · chatgpt via browser-harness</div>
+        <button class="modal-x" id="thumb-close" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="modal-label">prompt (sent verbatim to chatgpt)</label>
+        <textarea id="thumb-prompt" spellcheck="false" rows="6" style="width:100%;"></textarea>
+
+        <label class="modal-label" style="margin-top:14px;">additional direction (optional)</label>
+        <textarea id="thumb-additional" spellcheck="false" rows="3" style="width:100%;" placeholder="e.g. 'monochrome', 'use deep blue accent', 'no humans'"></textarea>
+
+        <label class="modal-label" style="margin-top:14px;">reference image (optional)
+          <span class="muted-mono" style="margin-left:8px; text-transform:none; letter-spacing:0;">— pick a file or paste with ⌘V</span>
+        </label>
+        <div class="thumb-ref-row">
+          <input type="file" id="thumb-ref-input" accept="image/png,image/jpeg,image/webp,image/gif" />
+          <button class="btn ghost" id="thumb-ref-clear" type="button" disabled><span class="btn-key">✕</span><span>clear</span></button>
+        </div>
+        <img id="thumb-ref-preview" class="thumb-ref-preview hidden" alt="reference preview" />
+
+        <div class="modal-preview" id="thumb-status" style="margin-top:14px;">
+          will spawn <code>claude --agent claude</code> with the <code>browser-harness</code> skill — drives your chrome to chatgpt, pastes the prompt, downloads the image. takes 2–4 min.
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="thumb-cancel">cancel</button>
+        <button class="btn primary" id="thumb-go"><span class="btn-key">✦</span><span>generate</span></button>
+      </div>
+    </div>
   </div>
 
   <!-- SCHEDULE MODAL -->
