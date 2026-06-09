@@ -58,6 +58,14 @@
           <span class="nav-key">09</span><span class="nav-name">blog studio</span>
           <span class="nav-count" data-count="studio">—</span>
         </a>
+        <a href="#linkedin-ideas"  class="nav-item" data-section="linkedin-ideas">
+          <span class="nav-key">10</span><span class="nav-name">linkedin ideas</span>
+          <span class="nav-count" data-count="linkedin-ideas">—</span>
+        </a>
+        <a href="#linkedin-drafts" class="nav-item" data-section="linkedin-drafts">
+          <span class="nav-key">11</span><span class="nav-name">linkedin drafts</span>
+          <span class="nav-count" data-count="linkedin-drafts">—</span>
+        </a>
       </nav>
 
       <section class="rail-block">
@@ -203,6 +211,13 @@
           </div>
         </div>
 
+        <div class="tab-bar" id="agent-tabs">
+          <button class="tab-btn active" data-agent-tab="x">x voice</button>
+          <button class="tab-btn"        data-agent-tab="linkedin">linkedin voice</button>
+        </div>
+
+        <div id="agent-pane-x">
+
         <div class="agent-block">
           <div class="agent-block-head">
             <div class="agent-block-title">agent prompt</div>
@@ -242,6 +257,30 @@
           </div>
           <pre id="study-log" class="study-log hidden"></pre>
           <div id="study-result" class="study-result hidden"></div>
+        </div>
+
+        </div><!-- /agent-pane-x -->
+
+        <div id="agent-pane-linkedin" class="hidden">
+          <div class="agent-block" id="li-agent-block">
+            <div class="agent-block-head">
+              <div class="agent-block-title">linkedin-voice agent prompt</div>
+              <div class="agent-block-meta">
+                <span id="li-agent-path" class="muted-mono">—</span>
+                <span class="muted-mono"> · saved </span>
+                <span id="li-agent-mtime" class="muted-mono">—</span>
+                <span id="li-agent-dirty" class="dirty-flag hidden">● unsaved</span>
+              </div>
+            </div>
+            <textarea id="li-agent-textarea" spellcheck="false" placeholder="loading…"></textarea>
+            <div class="agent-actions">
+              <span id="li-agent-bytes" class="muted-mono">— bytes</span>
+              <div class="spacer"></div>
+              <button class="btn ghost" id="li-agent-remine" title="re-scrape your linkedin posts and rebuild the GOLD EXAMPLES block"><span class="btn-key">↻</span><span>re-mine my posts</span></button>
+              <button class="btn ghost" id="li-agent-discard"><span class="btn-key">↺</span><span>discard changes</span></button>
+              <button class="btn primary" id="li-agent-save" disabled><span class="btn-key">⏎</span><span>save</span></button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -337,6 +376,42 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- LINKEDIN IDEAS -->
+      <section class="section hidden" id="section-linkedin-ideas">
+        <div class="banner">
+          <div class="banner-num">10</div>
+          <div>
+            <div class="banner-title">linkedin ideas</div>
+            <div class="banner-sub">mines your own linkedin posts + your X signal into genuinely valuable post ideas. tied to the <code>linkedin-voice</code> agent. each idea carries a <strong>why valuable</strong> line.</div>
+          </div>
+        </div>
+
+        <div class="blog-toolbar">
+          <span class="toolbar-label">sources</span>
+          <button class="btn primary" id="li-refresh" title="re-mine your linkedin posts + X signal, regenerate fresh ideas"><span class="btn-key">↻</span><span>refresh linkedin</span></button>
+          <div class="spacer"></div>
+          <span class="muted-mono" id="li-themes-meta">—</span>
+        </div>
+
+        <div class="chips" id="li-themes"></div>
+
+        <div class="idea-grid" id="li-idea-grid"></div>
+        <div class="ws-empty hidden" id="li-ideas-empty">no ideas yet — hit <strong>refresh linkedin</strong> to mine your posts + X signal.</div>
+      </section>
+
+      <!-- LINKEDIN DRAFTS -->
+      <section class="section hidden" id="section-linkedin-drafts">
+        <div class="banner">
+          <div class="banner-num">11</div>
+          <div>
+            <div class="banner-title">linkedin drafts</div>
+            <div class="banner-sub">full posts drafted in your linkedin voice. edit, save, then <strong>open in composer</strong> — it pre-fills linkedin and you click Post yourself. nothing is ever auto-submitted.</div>
+          </div>
+        </div>
+        <div class="grid-drafts" id="li-draft-grid"></div>
+        <div class="ws-empty hidden" id="li-drafts-empty">no drafts yet — go to <strong>10 linkedin ideas</strong> and hit <strong>write full post</strong> on an idea.</div>
       </section>
 
     </main>

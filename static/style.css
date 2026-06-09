@@ -1418,6 +1418,11 @@ body::before {
 .idea-card .idea-source.workflow,
 .idea-card .idea-source.medium-pattern,
 .idea-card .idea-source.medium-archive { color: var(--text-2); }
+.idea-card .idea-source.linkedin { color: #4aa3ff; border-color: rgba(74,163,255,0.35); }
+.idea-card .idea-source.x-signal { color: var(--accent); border-color: var(--accent-d); }
+
+/* linkedin drafts — long-form posts, taller editor */
+.li-draft textarea { min-height: 200px; line-height: 1.5; }
 
 .idea-card h3.idea-title {
   font: 16px/1.35 var(--sans);
