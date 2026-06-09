@@ -25,7 +25,29 @@ http://127.0.0.1:7873/
 05  scheduled    — timeline view of the queue, grouped by time bucket
 06  history      — last 200 posted actions (manual + scheduled)
 07  agent        — edit your voice persona; mine new X profiles into the agent
+08  blog ideas   — blog idea workspace
+09  blog studio  — long-form blog drafting
+10  linkedin ideas — value-post ideas from your LinkedIn posts + X signal
+11  linkedin drafts — full posts in your linkedin voice → pre-fill composer (you click Post)
 ```
+
+## LinkedIn workspace
+
+Posts-focused LinkedIn automation driven by the **cmux inline browser** (no LinkedIn API):
+
+- **Refresh** mines your own LinkedIn posts + your X interest signature into genuinely *valuable* post ideas — each carries a one-line *why this is valuable*. No filler.
+- **Write full post** drafts a complete LinkedIn-formatted post in a dedicated `linkedin-voice` agent (mined from your real material — editable in `07 agent`).
+- **Open in composer** pre-fills LinkedIn's composer in your cmux pane and stops — **you** review and click **Post**. Nothing is ever auto-submitted.
+
+Config in `~/.agent-reach/env.sh`:
+
+```bash
+export LINKEDIN_HANDLE="bobde-yagyesh"           # your /in/<handle>, no leading @
+export LINKEDIN_AGENT="linkedin-voice"            # optional (default)
+export LINKEDIN_AGENT_MD="$HOME/.claude/agents/linkedin-voice.md"  # optional
+```
+
+Requires the `cmux` CLI with a logged-in LinkedIn session. **Publishing needs the LinkedIn cmux pane on-screen** — a headless click can't open the composer (you'll get a `pane_hidden` hint asking you to foreground the pane). Reading is headless. Restarting `run.sh` always reclaims the same port (`7873`) from any older instance, so route-not-found after a rebuild just needs a re-run.
 
 ## Quick start
 
@@ -128,6 +150,16 @@ The dashboard's `07 agent` screen lets you live-edit this file and re-mine a new
 ```
 
 Installs a `launchd` agent that boots the server at login, respawns it on crash, and logs to `/tmp/xai-personalize-dashboard.{log,err}`. Uninstall with `daemon/uninstall-daemon.sh`.
+
+### Twice-daily auto-refresh
+
+```bash
+~/.claude/skills/xai-personalize-dashboard/daemon/install-refresh-daemon.sh
+```
+
+Installs a separate `launchd` agent (`com.xai-personalize.refresh`) that re-runs the pipeline automatically at **08:00 and 20:00 local time** — no need to click "Refresh pipeline". It runs `daemon/refresh.sh` directly (independent of the server) and logs to `/tmp/xai-personalize-refresh.{log,err}`. Uninstall with `daemon/uninstall-refresh-daemon.sh`.
+
+To change the times, edit the `Hour` values in the two `StartCalendarInterval` entries in `daemon/com.xai-personalize.refresh.plist.tpl`, then re-run the installer.
 
 ## Security
 

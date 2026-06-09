@@ -179,3 +179,32 @@ scheduling, auto-clicking Post, multi-image upload to LinkedIn.
 - Optional: detect "posted" automatically by polling the user's activity page.
 - Optional: schedule LinkedIn drafts (needs a foreground-aware queue runner).
 - README + SKILL.md updates documenting the LinkedIn workspace.
+
+## Build addendum (2026-06-09, post-implementation)
+
+Findings that emerged during implementation/verification and changed the build:
+
+1. **Repost-dominated activity → `my_posts()` filters reposts.** The user's
+   recent LinkedIn activity is almost entirely *reposts* of other people. The
+   original CSS-selector scrape both (a) only returned the first match and
+   (b) would have captured reposted *third-party* content as if it were the
+   user's voice. `my_posts()` now pulls the whole feed via `get html`, splits on
+   `Feed post number N`, and **keeps only the user's own authored items** —
+   reposts/reactions are dropped. Honest result today: ~0 reachable originals.
+2. **Headless infinite-scroll limit.** LinkedIn lazy-loads only a handful of
+   activity items when the cmux pane is off-screen (IntersectionObserver
+   doesn't fire for hidden webviews). So deep post history isn't headlessly
+   reachable; `my_posts()` returns the reachable recent originals, not all.
+3. **Voice grounded in X signal + verified material.** Because LinkedIn originals
+   are sparse, the `linkedin-voice` agent is anchored on the user's real,
+   verified material (projects, stack, honest takes) plus the X interest
+   signature — NOT on reposted third-party content. The earlier auto-mined gold
+   example (a reposted hiring post) was removed and relabeled as a *format*
+   template only.
+4. **`read_x_signal()` key fix.** The live `data/dashboard_data.json` uses
+   `interest_signature` (top_keywords/accounts/hashtags), not `signature`/`mine`.
+   `read_x_signal()` reads the correct keys and also pulls in-voice draft posts.
+5. **Single-port guarantee.** `server.py` now reclaims its port on startup
+   (kills a prior instance of *this* server holding the port) so re-running
+   `run.sh` after a rebuild always takes over the same port — fixing the
+   "route not found — older build" stale-server failure mode.

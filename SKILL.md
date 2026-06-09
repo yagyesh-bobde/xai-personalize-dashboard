@@ -51,21 +51,38 @@ export DASHBOARD_PORT="7873"         # optional — server port
 ## Files
 
 - `pipeline.py` — fetch → score → draft → write `data/dashboard_data.json`
-- `server.py` — stdlib HTTP server: `/data`, `/refresh`, `/post`, `/queue`, `/schedule`, `/scheduled`, `/history`, `/bookmark`, `/upload`, `/agent`, `/agent/study`
+- `server.py` — stdlib HTTP server: `/data`, `/refresh`, `/post`, `/queue`, `/schedule`, `/scheduled`, `/history`, `/bookmark`, `/upload`, `/agent`, `/agent/study`, plus `/linkedin/*` + `/linkedin-agent*`
+- `linkedin_cli.py` — LinkedIn I/O via the **cmux inline browser** CLI (read headless; pre-fill composer)
+- `linkedin.py` — LinkedIn pipeline + state: mine own posts + X signal → ideas → full drafts → `data/linkedin_data.json`
 - `static/index.html` + `style.css` + `app.js` — dashboard UI
 - `run.sh` — launches server (also exec'd by this skill)
 - `daemon/` — optional launchd auto-start
 - `data/` — local-only state (gitignored)
 
+## LinkedIn workspace
+
+Screens **`10 linkedin ideas`** and **`11 linkedin drafts`** (plus a LinkedIn tab in `07 agent`):
+
+1. **Refresh linkedin** mines your own LinkedIn posts (via cmux browser) + your X interest signature, then drafts genuinely *valuable* post ideas — each with a one-line `why_valuable`.
+2. **Write full post** turns an idea into a full LinkedIn-formatted draft in your `linkedin-voice`.
+3. **Open in composer** pre-fills LinkedIn's composer in your cmux browser pane — it never auto-submits. You review and click **Post**, then **Mark as posted**.
+
+Config (in `~/.agent-reach/env.sh`): `LINKEDIN_HANDLE` (your `/in/<handle>`, no leading `@`), optional `LINKEDIN_AGENT` (default `linkedin-voice`), `LINKEDIN_AGENT_MD`.
+
+> **cmux browser constraints:** reading is headless; **publishing needs the LinkedIn cmux pane on-screen** (a headless click won't open the composer — `/linkedin/compose` returns `{ok:false, reason:"pane_hidden"}` with a hint). LinkedIn's infinite scroll only loads a few items when the pane is hidden, and reposts are filtered out, so `my_posts()` returns the reachable *original* posts (often few) — the voice agent leans on your X signal + real material to compensate.
+
 ## Dependencies
 
 - `twitter` CLI from `agent-reach` on PATH
-- `claude` CLI with your voice agent at `~/.claude/agents/<DASHBOARD_AGENT>.md`
+- `cmux` CLI (the cmux.app inline browser) for the LinkedIn workspace, logged into LinkedIn
+- `claude` CLI with your voice agents at `~/.claude/agents/<DASHBOARD_AGENT>.md` and `~/.claude/agents/linkedin-voice.md`
 - Python 3.10+ (stdlib only)
 
 ## Troubleshooting
 
 - **Empty feed / no drafts:** run `twitter status` — your X session may have expired.
 - **`claude call timed out`:** the pipeline gives up after 240s. Re-run; if it persists, try `claude --agent <name> -p "hi"` manually.
-- **Port in use:** `DASHBOARD_PORT=7900 ~/.claude/skills/xai-personalize-dashboard/run.sh`
+- **`linkedin load failed: route not found`:** your running server is an older build. Just re-run `run.sh` — it automatically reclaims the same port (`7873`) from the old instance and takes over. No need to hunt for the PID.
+- **Port in use:** `run.sh` reclaims `7873` from a previous instance of this server automatically. If a *different* app holds the port, it won't be killed — set `DASHBOARD_PORT=7900 run.sh` instead.
+- **LinkedIn `pane_hidden` on Open in composer:** bring your LinkedIn cmux browser pane to the front (it must be on-screen for the composer to open), then click **Open in composer** again.
 - **Posted the wrong thing:** the dashboard does not undo. Delete from X directly: `twitter delete <id>`.
