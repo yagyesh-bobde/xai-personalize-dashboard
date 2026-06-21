@@ -4,6 +4,8 @@ The eval (eval_engine.py) writes this file automatically; pipeline.py reads it
 and appends the formatted blocks to every draft prompt. Lives in data/ (gitignored).
 """
 import json
+import os
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -26,12 +28,25 @@ def load_state(path=None) -> dict:
     return {k: list(data.get(k) or []) for k in KEYS}
 
 
+def _atomic_write_json(path, obj):
+    path = Path(path)
+    path.parent.mkdir(exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(obj, indent=2, ensure_ascii=False))
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def save_state(state: dict, path=None) -> None:
     path = path or STATE_PATH
-    p = Path(path)
-    p.parent.mkdir(exist_ok=True)
-    p.write_text(json.dumps({k: list(state.get(k) or []) for k in KEYS},
-                            indent=2, ensure_ascii=False))
+    _atomic_write_json(path, {k: list(state.get(k) or []) for k in KEYS})
 
 
 def merge_state(state: dict, *, gold=None, anti=None, rules=None) -> dict:

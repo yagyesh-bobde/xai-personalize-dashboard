@@ -1092,7 +1092,7 @@ async function loadEvals() {
   const stateBlock = (title, items, cls) => {
     if (!items || !items.length) return;
     stateEl.appendChild(el("h4", { class: "evals-h" }, title));
-    stateEl.appendChild(el("ul", { class: `eval-list ${cls}` },
+    stateEl.appendChild(el("ul", { class: (`eval-list ${cls}`).trim() },
       items.map(i => el("li", {}, i))));
   };
   stateBlock("currently rewarding (gold)", st.gold, "good");

@@ -7,7 +7,7 @@ for one-click revert. Lives in data/ (gitignored).
 """
 import json
 import os
-import sys
+import tempfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -30,11 +30,25 @@ def load_runs(path=None) -> list:
         return []
 
 
+def _atomic_write_json(path, obj):
+    path = Path(path)
+    path.parent.mkdir(exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(obj, indent=2, ensure_ascii=False))
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _save_runs(runs: list, path=None) -> None:
     path = path or EVALS_PATH
-    p = Path(path)
-    p.parent.mkdir(exist_ok=True)
-    p.write_text(json.dumps(runs, indent=2, ensure_ascii=False))
+    _atomic_write_json(path, runs)
 
 
 def _parse_ts(ts: str):

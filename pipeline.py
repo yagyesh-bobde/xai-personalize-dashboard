@@ -441,6 +441,7 @@ def _learned_state() -> str:
 
 def _voice_header(sig: dict, mine: list[dict]) -> str:
     mine_block = "\n".join(f"- {t['text'][:160]}" for t in mine[:8]) or "(none)"
+    learned = _learned_state()
     return (
         "You are running as the configured voice agent. Your persona is already loaded.\n"
         "Below is today's signal. Draft tweets I can post. Reply with JSON ONLY.\n\n"
@@ -450,7 +451,7 @@ def _voice_header(sig: dict, mine: list[dict]) -> str:
         "## My recent posts (do NOT repeat these themes verbatim)\n"
         f"{mine_block}\n\n"
         f"{GOLD_EXAMPLES}\n"
-        + (("\n" + _learned_state()) if _learned_state() else "")
+        + (("\n" + learned) if learned else "")
     )
 
 

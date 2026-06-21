@@ -5,11 +5,16 @@ Discards are the negative signal; kept/edited/posted are positive. The eval
 (eval_engine.py) reads these to tune the learned voice state. Lives in data/.
 """
 import json
+import os
+import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 FEEDBACK_PATH = ROOT / "data" / "feedback.json"
+
+_LOCK = threading.Lock()
 
 GOOD_ACTIONS = {"mark_posted", "like", "post"}
 BAD_ACTIONS = {"discard"}
@@ -25,6 +30,22 @@ def load_events(path=None) -> list:
         return json.loads(Path(path).read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return []
+
+
+def _atomic_write_json(path, obj):
+    path = Path(path)
+    path.parent.mkdir(exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(obj, indent=2, ensure_ascii=False))
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def record_event(event: dict, path=None) -> dict:
@@ -44,11 +65,10 @@ def record_event(event: dict, path=None) -> dict:
         "target_author": event.get("target_author"),
         "target_text": event.get("target_text"),
     }
-    events = load_events(path)
-    events.append(rec)
-    p = Path(path)
-    p.parent.mkdir(exist_ok=True)
-    p.write_text(json.dumps(events, indent=2, ensure_ascii=False))
+    with _LOCK:
+        events = load_events(path)
+        events.append(rec)
+        _atomic_write_json(path, events)
     return rec
 
 
