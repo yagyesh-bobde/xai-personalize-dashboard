@@ -37,6 +37,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import blog as blog_mod
+import eval_engine
+import feedback as feedback_mod
 import linkedin as linkedin_mod
 
 ROOT      = Path(__file__).resolve().parent
@@ -703,6 +705,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/history":
             return self._send_json(200, load_json(POSTED, []))
 
+        if path == "/evals":
+            try:
+                return self._send_json(200, eval_engine.overview())
+            except Exception as e:
+                return self._send_json(500, {"error": str(e)})
+
         if path == "/agent":
             if not AGENT_MD.exists():
                 return self._send_json(404, {"error": f"agent file not found: {AGENT_MD}"})
@@ -844,6 +852,23 @@ class Handler(BaseHTTPRequestHandler):
             if ok:
                 log_posted(kind, text, target_id, image_paths, result, source="manual")
             return self._send_json(200 if ok else 400, {"ok": ok, "result": result, "kind": kind})
+
+        if path == "/feedback":
+            try:
+                rec = feedback_mod.record_event(body)
+                return self._send_json(200, {"ok": True, "event": rec})
+            except Exception as e:
+                return self._send_json(500, {"ok": False, "error": str(e)})
+
+        if path == "/eval/run":
+            try:
+                return self._send_json(200, eval_engine.run_eval(force=True))
+            except Exception as e:
+                return self._send_json(500, {"ok": False, "error": str(e)})
+
+        if path == "/evals/revert":
+            res = eval_engine.revert_eval(body.get("id"))
+            return self._send_json(200 if res.get("ok") else 404, res)
 
         if path == "/bookmark":
             tweet_id = str(body.get("id") or "").strip()
