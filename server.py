@@ -867,8 +867,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(500, {"ok": False, "error": str(e)})
 
         if path == "/evals/revert":
-            res = eval_engine.revert_eval(body.get("id"))
-            return self._send_json(200 if res.get("ok") else 404, res)
+            try:
+                res = eval_engine.revert_eval(body.get("id"))
+                return self._send_json(200 if res.get("ok") else 404, res)
+            except Exception as e:
+                return self._send_json(500, {"ok": False, "error": str(e)})
 
         if path == "/bookmark":
             tweet_id = str(body.get("id") or "").strip()
