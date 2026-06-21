@@ -2007,6 +2007,16 @@ body::before {
 }
 
 
+/* linkedin draft thumbnail preview */
+.li-thumb { margin: 10px 0 2px; }
+.li-thumb.hidden { display: none; }
+.li-thumb img {
+  width: 100%; max-width: 440px; aspect-ratio: 16 / 9; object-fit: cover;
+  background: var(--bg-2);
+  border: 1px solid var(--border); border-radius: var(--r);
+  display: block;
+}
+
 /* thumbnail panel */
 .thumb-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 900px) { .thumb-body { grid-template-columns: 1fr; } }

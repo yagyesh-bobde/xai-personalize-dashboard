@@ -16,6 +16,13 @@ import linkedin_cli
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data" / "linkedin_data.json"
 X_DATA = ROOT / "data" / "dashboard_data.json"
+THUMBNAILS_DIR = ROOT / "data" / "linkedin-thumbnails"
+
+# Fixed base prompt for ChatGPT image generation (the post text is appended).
+THUMBNAIL_BASE_PROMPT = (
+    "For this post create a linkedin thumbnail which is minimal, with centered text.\n"
+    "Dark Theme. Has thumbnail type fancy fonts. BUT doesn't use too many assets.\n"
+    "It should be minimal. Aspect ratio: 16:9")
 AGENT_NAME = (os.environ.get("LINKEDIN_AGENT") or "linkedin-voice").strip()
 AGENT_MD = Path(os.environ.get("LINKEDIN_AGENT_MD") or (Path.home() / ".claude" / "agents" / f"{AGENT_NAME}.md"))
 
@@ -224,7 +231,34 @@ def compose(draft_id: str) -> dict:
     d = next((x for x in data.get("drafts", []) if x.get("id") == draft_id), None)
     if not d:
         return {"ok": False, "reason": "not_found"}
-    return linkedin_cli.prefill_composer(d["text"])
+    thumb = d.get("thumbnail_path")
+    if thumb and not os.path.exists(thumb):
+        thumb = None
+    return linkedin_cli.prefill_composer(d["text"], image_path=thumb)
+
+
+# ────────────────────  thumbnail generation  ────────────────────
+
+def generate_thumbnail(draft_id: str, timeout: int = 240) -> dict:
+    """Generate a 16:9 LinkedIn thumbnail for a draft via ChatGPT (cmux-driven)
+    and persist it on the draft. Returns {ok, path?, url?, error?}."""
+    data = read_data()
+    d = next((x for x in data.get("drafts", []) if x.get("id") == draft_id), None)
+    if not d:
+        return {"ok": False, "error": "draft not found"}
+    prompt = THUMBNAIL_BASE_PROMPT + "\n\nPost:\n" + (d.get("text") or "").strip()
+    THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = THUMBNAILS_DIR / f"{draft_id}-{int(time.time())}.png"
+    res = linkedin_cli.chatgpt_generate_image(prompt, out_path, timeout=timeout)
+    if not res.get("ok"):
+        return {"ok": False, "error": res.get("hint") or res.get("reason") or "generation failed"}
+    d["thumbnail_path"] = str(out_path)
+    d["thumbnail_prompt"] = prompt
+    d["thumbnail_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    write_data(data)
+    return {"ok": True, "path": str(out_path),
+            "url": f"/linkedin-thumbnails/{out_path.name}",
+            "draft_id": draft_id, "generated_at": d["thumbnail_at"]}
 
 
 # ────────────────────  agent file  ────────────────────

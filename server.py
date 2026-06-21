@@ -114,7 +114,7 @@ def run_pipeline() -> tuple[bool, str]:
     try:
         proc = subprocess.run(
             [sys.executable, str(PIPELINE)],
-            capture_output=True, text=True, timeout=900,
+            capture_output=True, text=True, timeout=900, env=TW_ENV,
         )
         log = (proc.stdout + "\n" + proc.stderr).strip()
         return proc.returncode == 0, log[-2000:]
@@ -768,6 +768,13 @@ class Handler(BaseHTTPRequestHandler):
                     "gif": "image/gif", "webp": "image/webp"}.get(ext, "application/octet-stream")
             return self._send_file(blog_mod.THUMBNAILS_DIR / name, mime)
 
+        if path.startswith("/linkedin-thumbnails/"):
+            name = Path(path[len("/linkedin-thumbnails/"):]).name
+            ext = name.lower().rsplit(".", 1)[-1]
+            mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "gif": "image/gif", "webp": "image/webp"}.get(ext, "application/octet-stream")
+            return self._send_file(linkedin_mod.THUMBNAILS_DIR / name, mime)
+
         self.send_error(404)
 
     def do_DELETE(self):
@@ -1184,6 +1191,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/linkedin/mark-posted":
             return self._send_json(200, linkedin_mod.mark_posted(body.get("id", "")))
+
+        if path == "/linkedin/thumbnail":
+            try:
+                return self._send_json(200, linkedin_mod.generate_thumbnail(body.get("id", "")))
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
 
         if path == "/linkedin-agent":
             new_content = body.get("content")

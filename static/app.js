@@ -3225,8 +3225,22 @@ function makeLinkedinDraftCard(draft) {
     el("span", { class: "btn-key" }, "✓"), el("span", {}, "mark as posted"),
   ]);
   const discardBtn = el("button", { class: "btn ghost danger", title: "discard this draft" }, "discard");
+  const thumbBtn = el("button", { class: "btn ghost", title: "generate a 16:9 thumbnail for this post via ChatGPT" }, [
+    el("span", { class: "btn-key" }, "🖼"),
+    el("span", {}, draft.thumbnail_path ? "regenerate thumbnail" : "generate thumbnail"),
+  ]);
 
-  const allBtns = [saveBtn, composeBtn, postedBtn, discardBtn];
+  // thumbnail preview (shown once generated; auto-attaches on "open in composer")
+  const thumbName = (p) => (p || "").split("/").pop();
+  const thumbPreview = el("div", { class: "li-thumb hidden" });
+  const thumbImg = el("img", { alt: "thumbnail", loading: "lazy" });
+  thumbPreview.appendChild(thumbImg);
+  if (draft.thumbnail_path) {
+    thumbImg.src = `/linkedin-thumbnails/${thumbName(draft.thumbnail_path)}`;
+    thumbPreview.classList.remove("hidden");
+  }
+
+  const allBtns = [saveBtn, composeBtn, postedBtn, discardBtn, thumbBtn];
   const setDisabled = (v) => allBtns.forEach(b => b.disabled = v);
 
   saveBtn.addEventListener("click", async () => {
@@ -3278,7 +3292,15 @@ function makeLinkedinDraftCard(draft) {
       });
       const data = await blogJson(res);
       if (data.ok) {
-        toast("composer pre-filled ✓ — review and click Post in linkedin", "ok");
+        if (data.thumbnail_attached) {
+          toast("composer pre-filled + thumbnail attached ✓ — review and click Post", "ok");
+        } else if (data.thumbnail_hint) {
+          hint.textContent = data.thumbnail_hint;
+          hint.classList.remove("hidden");
+          toast("composer pre-filled ✓ — finish the thumbnail (⌘V) then Post", "ok");
+        } else {
+          toast("composer pre-filled ✓ — review and click Post in linkedin", "ok");
+        }
       } else if (data.reason === "pane_hidden") {
         hint.textContent = data.hint || "Bring your LinkedIn pane to the front in cmux, then retry.";
         hint.classList.remove("hidden");
@@ -3333,7 +3355,37 @@ function makeLinkedinDraftCard(draft) {
     }
   });
 
-  wrap.appendChild(el("div", { class: "actions" }, [counter, discardBtn, postedBtn, saveBtn, composeBtn]));
+  thumbBtn.addEventListener("click", async () => {
+    setDisabled(true);
+    const lbl = thumbBtn.querySelector("span:last-child");
+    const prev = lbl.textContent; lbl.textContent = "generating… (30-90s)";
+    try {
+      const res = await fetch("/linkedin/thumbnail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: draft.id }),
+      });
+      const data = await blogJson(res);
+      if (data.ok) {
+        draft.thumbnail_path = data.path;
+        thumbImg.src = `${data.url}?t=${Date.now()}`;
+        thumbPreview.classList.remove("hidden");
+        lbl.textContent = "regenerate thumbnail";
+        toast("thumbnail generated ✓ — it attaches when you open in composer", "ok");
+      } else {
+        toast(`thumbnail failed: ${data.error || "?"}`, "error");
+        lbl.textContent = prev;
+      }
+    } catch (e) {
+      toast(`thumbnail error: ${e.message}`, "error");
+      lbl.textContent = prev;
+    } finally {
+      setDisabled(false);
+    }
+  });
+
+  wrap.appendChild(thumbPreview);
+  wrap.appendChild(el("div", { class: "actions" }, [counter, discardBtn, thumbBtn, postedBtn, saveBtn, composeBtn]));
   wrap.appendChild(hint);
   return wrap;
 }

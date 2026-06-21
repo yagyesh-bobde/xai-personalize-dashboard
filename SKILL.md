@@ -35,6 +35,13 @@ Single-binary local web app at `http://127.0.0.1:7873` that:
 
 Server boots on port 7873 (override with `DASHBOARD_PORT`). First load shows empty cards — hit **↻ refresh** to run the pipeline (~30–60s).
 
+**Always-on (recommended):** so the page is reachable without holding a terminal open, install the launchd agent — it starts the server at login and restarts it if it dies (KeepAlive):
+
+```bash
+~/.claude/skills/xai-personalize-dashboard/daemon/install-server-daemon.sh   # logs: /tmp/xai-personalize-server.{log,err}
+~/.claude/skills/xai-personalize-dashboard/daemon/uninstall-server-daemon.sh  # stop auto-start
+```
+
 ## Configuration
 
 Set these in `~/.agent-reach/env.sh` (sourced automatically by `run.sh`):
@@ -56,7 +63,7 @@ export DASHBOARD_PORT="7873"         # optional — server port
 - `linkedin.py` — LinkedIn pipeline + state: mine own posts + X signal → ideas → full drafts → `data/linkedin_data.json`
 - `static/index.html` + `style.css` + `app.js` — dashboard UI
 - `run.sh` — launches server (also exec'd by this skill)
-- `daemon/` — optional launchd auto-start
+- `daemon/` — launchd agents: `*-server-daemon.sh` keeps the dashboard server always-on (RunAtLoad + KeepAlive); `*-refresh-daemon.sh` auto-refreshes the pipeline twice daily
 - `data/` — local-only state (gitignored)
 
 ## LinkedIn workspace
