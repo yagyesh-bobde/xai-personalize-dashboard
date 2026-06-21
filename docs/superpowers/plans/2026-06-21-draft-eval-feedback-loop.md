@@ -6,7 +6,7 @@
 
 **Architecture:** Three new Python modules under the skill root — `voice_state.py` (read/merge/format the learned data file), `feedback.py` (append-only event store + summary), `eval_engine.py` (daily-guarded eval that reads good/bad examples + current state, calls `claude`, and auto-writes the learned state + a logged, revertible run record). The pipeline injects the learned state into every draft prompt and calls the eval guard before drafting. The server exposes `/feedback`, `/evals`, `/eval/run`, `/evals/revert`. The front-end adds card actions (mark-posted, like) with edit-delta capture, and the evals screen.
 
-**Tech Stack:** Python 3.10+ stdlib only (no third-party deps), stdlib `http.server`, vanilla JS/HTML/CSS. Tests via `pytest` (also runnable directly).
+**Tech Stack:** Python 3.10+ stdlib only (no third-party deps), stdlib `http.server`, vanilla JS/HTML/CSS. Tests run directly via each file's `__main__` harness (`python3 tests/test_X.py`) — **pytest is not installed**.
 
 ## Global Constraints
 
@@ -17,6 +17,7 @@
 - Path-default pattern for all file I/O helpers: signature `def f(..., path=None)` then `path = path or MODULE_CONSTANT` — so tests can monkeypatch the module constant. (Binding the default at def-time would defeat monkeypatching.)
 - File naming: the eval module is `eval_engine.py` (NOT `eval.py`) to avoid confusion with the `eval` builtin.
 - Follow existing repo conventions: lowercase log lines prefixed `[pipeline]` / `[server]`, `_send_json(code, payload)` for responses, `load_json`/`save_json` helpers in `server.py`.
+- **pytest is NOT installed.** Tests run via the repo's direct `__main__` harness (`python3 tests/test_X.py`), which **skips any test function that takes arguments**. Therefore: NO pytest fixtures (`tmp_path`, `monkeypatch`). Every test is a **zero-argument** `def test_*()`. Use `tempfile.mkdtemp()` for temp paths, pass explicit `path=` args to module functions, and for redirecting a module's default path constant assign it directly (`EE.EVALS_PATH = ...`) or save/restore an attribute in a `try/finally`. Each new test file ends with the same `if __name__ == "__main__":` runner as `tests/test_pipeline_variety.py` (run all `test_*`, print ok/FAIL, `sys.exit(1 if failed else 0)`). Test run command is `python3 tests/test_X.py`, never `pytest`.
 - Tests follow `tests/test_pipeline_variety.py` style: module docstring, `sys.path.insert(0, ...)` to import from root, plain `def test_*` functions with `assert`.
 
 ---
@@ -59,8 +60,8 @@ def test_reply_quote_targets_default_to_300():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python3 -m pytest tests/test_pipeline_variety.py::test_reply_quote_targets_default_to_300 -v`
-Expected: FAIL — `assert 100 == 300` (current default is 100).
+Run: `python3 tests/test_pipeline_variety.py`
+Expected: `test_reply_quote_targets_default_to_300` prints `FAIL` — `assert 100 == 300` (current default is 100); overall exit 1.
 
 - [ ] **Step 3: Make the change**
 
@@ -76,8 +77,8 @@ In `pipeline.py` line 134, raise the feed pull to supply enough targets:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python3 -m pytest tests/test_pipeline_variety.py -v`
-Expected: PASS (all tests, including the new one).
+Run: `python3 tests/test_pipeline_variety.py`
+Expected: all `test_*` print `ok` (fixture tests skip), including the new one; exit 0.
 
 - [ ] **Step 5: Commit**
 
@@ -109,22 +110,28 @@ Create `tests/test_voice_state.py`:
 ```python
 """Unit tests for voice_state.py (learned-state file + prompt formatting).
 
-Run: python3 -m pytest tests/test_voice_state.py -v
+Run directly (no pytest): python3 tests/test_voice_state.py
 """
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import voice_state as VS  # noqa: E402
 
 
-def test_load_missing_returns_empty(tmp_path):
-    state = VS.load_state(path=tmp_path / "nope.json")
+def _tmp():
+    return Path(tempfile.mkdtemp()) / "vs.json"
+
+
+def test_load_missing_returns_empty():
+    state = VS.load_state(path=Path(tempfile.mkdtemp()) / "nope.json")
     assert state == {"gold": [], "anti": [], "rules": []}
 
 
-def test_save_then_load_roundtrip(tmp_path):
-    p = tmp_path / "vs.json"
+def test_save_then_load_roundtrip():
+    p = _tmp()
     VS.save_state({"gold": ["a"], "anti": ["b"], "rules": ["c"]}, path=p)
     assert VS.load_state(path=p) == {"gold": ["a"], "anti": ["b"], "rules": ["c"]}
 
@@ -157,11 +164,26 @@ def test_format_includes_blocks():
     assert "- avoid me" in out
     assert "extra voice rules" in out
     assert "- be short" in out
+
+
+if __name__ == "__main__":
+    import traceback
+    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    failed = 0
+    for fn in fns:
+        try:
+            fn()
+            print(f"ok   {fn.__name__}")
+        except Exception:
+            failed += 1
+            print(f"FAIL {fn.__name__}")
+            traceback.print_exc()
+    sys.exit(1 if failed else 0)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python3 -m pytest tests/test_voice_state.py -v`
+Run: `python3 tests/test_voice_state.py`
 Expected: FAIL — `ModuleNotFoundError: No module named 'voice_state'`.
 
 - [ ] **Step 3: Write the implementation**
@@ -234,8 +256,8 @@ def format_for_prompt(state: dict) -> str:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python3 -m pytest tests/test_voice_state.py -v`
-Expected: PASS (all 6 tests).
+Run: `python3 tests/test_voice_state.py`
+Expected: all 6 print `ok`, exit 0.
 
 - [ ] **Step 5: Commit**
 
@@ -258,29 +280,37 @@ git commit -m "feat: voice_state module — learned gold/anti/rules data file"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/test_pipeline_variety.py`:
+Append to `tests/test_pipeline_variety.py` (zero-arg; save/restore the attribute — no monkeypatch):
 ```python
-def test_voice_header_injects_learned_state(monkeypatch):
-    import voice_state as VS
-    monkeypatch.setattr(P, "_learned_state", lambda: VS.format_for_prompt(
-        {"gold": ["kept one"], "anti": ["rejected one"], "rules": []}))
-    sig = {"top_keywords": ["agents"], "top_accounts": ["@x"]}
-    header = P._voice_header(sig, [])
-    assert "kept one" in header
-    assert "rejected one" in header
+def test_voice_header_injects_learned_state():
+    orig = P._learned_state
+    try:
+        P._learned_state = lambda: ("## LEARNED — drafts you've kept (match this texture)\n"
+                                    "- kept one\n\n"
+                                    "## LEARNED — drafts I rejected, do NOT write like these\n"
+                                    "- rejected one\n")
+        header = P._voice_header({"top_keywords": ["agents"], "top_accounts": ["@x"]}, [])
+        assert "kept one" in header
+        assert "rejected one" in header
+    finally:
+        P._learned_state = orig
 
 
-def test_voice_header_empty_learned_state_is_noop(monkeypatch):
-    monkeypatch.setattr(P, "_learned_state", lambda: "")
-    sig = {"top_keywords": ["agents"], "top_accounts": ["@x"]}
-    header = P._voice_header(sig, [])
-    assert "LEARNED" not in header
+def test_voice_header_empty_learned_state_is_noop():
+    orig = P._learned_state
+    try:
+        P._learned_state = lambda: ""
+        header = P._voice_header({"top_keywords": ["agents"], "top_accounts": ["@x"]}, [])
+        assert "LEARNED" not in header
+    finally:
+        P._learned_state = orig
 ```
+(The RED failure comes from `orig = P._learned_state` raising `AttributeError` before the function exists.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python3 -m pytest tests/test_pipeline_variety.py::test_voice_header_injects_learned_state -v`
-Expected: FAIL — `AttributeError: ... has no attribute '_learned_state'`.
+Run: `python3 tests/test_pipeline_variety.py`
+Expected: the two new `test_voice_header_*` print `FAIL` with `AttributeError: ... has no attribute '_learned_state'`; overall exit 1.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -311,8 +341,8 @@ to:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python3 -m pytest tests/test_pipeline_variety.py -v`
-Expected: PASS (all tests).
+Run: `python3 tests/test_pipeline_variety.py`
+Expected: all `test_*` print `ok` (fixture-free tests run; none skipped for these two), exit 0.
 
 - [ ] **Step 5: Commit**
 
@@ -343,17 +373,23 @@ Create `tests/test_feedback.py`:
 ```python
 """Unit tests for feedback.py (event store + summary).
 
-Run: python3 -m pytest tests/test_feedback.py -v
+Run directly (no pytest): python3 tests/test_feedback.py
 """
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import feedback as FB  # noqa: E402
 
 
-def test_record_maps_signals_and_stamps_ts(tmp_path):
-    p = tmp_path / "fb.json"
+def _tmp():
+    return Path(tempfile.mkdtemp()) / "fb.json"
+
+
+def test_record_maps_signals_and_stamps_ts():
+    p = _tmp()
     good = FB.record_event({"kind": "post", "action": "mark_posted",
                             "original_text": "hi"}, path=p)
     assert good["signal"] == "good"
@@ -365,8 +401,8 @@ def test_record_maps_signals_and_stamps_ts(tmp_path):
     assert len(FB.load_events(path=p)) == 2
 
 
-def test_record_detects_edit_delta(tmp_path):
-    p = tmp_path / "fb.json"
+def test_record_detects_edit_delta():
+    p = _tmp()
     rec = FB.record_event({"kind": "quote", "action": "like",
                            "original_text": "orig", "final_text": "edited"}, path=p)
     assert rec["edited"] is True
@@ -374,15 +410,15 @@ def test_record_detects_edit_delta(tmp_path):
     assert rec["final_text"] == "edited"
 
 
-def test_record_unknown_action_signal_none(tmp_path):
-    p = tmp_path / "fb.json"
+def test_record_unknown_action_signal_none():
+    p = _tmp()
     rec = FB.record_event({"kind": "post", "action": "whatever",
                            "original_text": "x"}, path=p)
     assert rec["signal"] is None
 
 
-def test_summarize_counts(tmp_path):
-    p = tmp_path / "fb.json"
+def test_summarize_counts():
+    p = _tmp()
     FB.record_event({"kind": "post", "action": "like", "original_text": "a"}, path=p)
     FB.record_event({"kind": "post", "action": "discard", "original_text": "b"}, path=p)
     FB.record_event({"kind": "reply", "action": "discard", "original_text": "c"}, path=p)
@@ -399,11 +435,26 @@ def test_summarize_since_ts():
               {"ts": "2026-06-22T00:00:00Z", "signal": "bad", "kind": "post"}]
     s = FB.summarize(events, since_ts="2026-06-21T00:00:00Z")
     assert s["since_last"] == 1
+
+
+if __name__ == "__main__":
+    import traceback
+    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    failed = 0
+    for fn in fns:
+        try:
+            fn()
+            print(f"ok   {fn.__name__}")
+        except Exception:
+            failed += 1
+            print(f"FAIL {fn.__name__}")
+            traceback.print_exc()
+    sys.exit(1 if failed else 0)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python3 -m pytest tests/test_feedback.py -v`
+Run: `python3 tests/test_feedback.py`
 Expected: FAIL — `ModuleNotFoundError: No module named 'feedback'`.
 
 - [ ] **Step 3: Write the implementation**
@@ -480,8 +531,8 @@ def summarize(events: list, since_ts: str | None = None) -> dict:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python3 -m pytest tests/test_feedback.py -v`
-Expected: PASS (all 5 tests).
+Run: `python3 tests/test_feedback.py`
+Expected: all 5 print `ok`, exit 0.
 
 - [ ] **Step 5: Commit**
 
@@ -514,11 +565,13 @@ Create `tests/test_eval_engine.py`:
 ```python
 """Unit tests for eval_engine.py (guard, merge, revert).
 
-Run: python3 -m pytest tests/test_eval_engine.py -v
+Run directly (no pytest): python3 tests/test_eval_engine.py
 """
 import os
 import sys
+import tempfile
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import voice_state as VS  # noqa: E402
@@ -526,11 +579,15 @@ import feedback as FB     # noqa: E402
 import eval_engine as EE  # noqa: E402
 
 
-def _wire(monkeypatch, tmp_path):
-    """Point all three modules' file constants at tmp paths."""
-    monkeypatch.setattr(VS, "STATE_PATH", tmp_path / "voice_state.json")
-    monkeypatch.setattr(FB, "FEEDBACK_PATH", tmp_path / "feedback.json")
-    monkeypatch.setattr(EE, "EVALS_PATH", tmp_path / "evals.json")
+def _wire():
+    """Point all three modules' file constants at a fresh temp dir (direct
+    attribute assignment — the path=None-then-or-CONSTANT pattern reads these
+    globals at call time, so reassigning isolates each test)."""
+    d = Path(tempfile.mkdtemp())
+    VS.STATE_PATH = d / "voice_state.json"
+    FB.FEEDBACK_PATH = d / "feedback.json"
+    EE.EVALS_PATH = d / "evals.json"
+    return d
 
 
 def _seed_events(n_good, n_bad):
@@ -540,15 +597,15 @@ def _seed_events(n_good, n_bad):
         FB.record_event({"kind": "post", "action": "discard", "original_text": f"bad{i}"})
 
 
-def test_skips_when_insufficient_events(monkeypatch, tmp_path):
-    _wire(monkeypatch, tmp_path)
+def test_skips_when_insufficient_events():
+    _wire()
     _seed_events(1, 1)   # below MIN_EVENTS
     res = EE.run_eval(caller=lambda p: {"conclusion": "x"})
     assert res == {"skipped": "insufficient"}
 
 
-def test_runs_and_writes_state(monkeypatch, tmp_path):
-    _wire(monkeypatch, tmp_path)
+def test_runs_and_writes_state():
+    _wire()
     _seed_events(5, 5)
     fake = {"conclusion": "keep it short", "gold_examples_to_add": ["short one"],
             "anti_examples_to_add": ["long polished one"], "rule_adjustments": ["be terse"]}
@@ -563,8 +620,8 @@ def test_runs_and_writes_state(monkeypatch, tmp_path):
     assert len(EE.load_runs()) == 1
 
 
-def test_cadence_guard_blocks_second_run(monkeypatch, tmp_path):
-    _wire(monkeypatch, tmp_path)
+def test_cadence_guard_blocks_second_run():
+    _wire()
     _seed_events(5, 5)
     now = datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
     EE.run_eval(caller=lambda p: {"conclusion": "a"}, now=now)
@@ -574,22 +631,22 @@ def test_cadence_guard_blocks_second_run(monkeypatch, tmp_path):
     assert res == {"skipped": "cadence"}
 
 
-def test_force_bypasses_guards(monkeypatch, tmp_path):
-    _wire(monkeypatch, tmp_path)
+def test_force_bypasses_guards():
+    _wire()
     _seed_events(0, 0)   # nothing
     run = EE.run_eval(force=True, caller=lambda p: {"conclusion": "forced"})
     assert run["conclusion"] == "forced"
 
 
-def test_claude_failure_returns_skip(monkeypatch, tmp_path):
-    _wire(monkeypatch, tmp_path)
+def test_claude_failure_returns_skip():
+    _wire()
     _seed_events(5, 5)
     res = EE.run_eval(caller=lambda p: None)
     assert res == {"skipped": "claude_failed"}
 
 
-def test_revert_restores_prior_state(monkeypatch, tmp_path):
-    _wire(monkeypatch, tmp_path)
+def test_revert_restores_prior_state():
+    _wire()
     VS.save_state({"gold": ["before"], "anti": [], "rules": []})
     _seed_events(5, 5)
     run = EE.run_eval(caller=lambda p: {"conclusion": "c", "gold_examples_to_add": ["after"]})
@@ -599,11 +656,26 @@ def test_revert_restores_prior_state(monkeypatch, tmp_path):
     assert VS.load_state() == {"gold": ["before"], "anti": [], "rules": []}
     # second revert is a no-op
     assert EE.revert_eval(run["id"])["ok"] is False
+
+
+if __name__ == "__main__":
+    import traceback
+    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    failed = 0
+    for fn in fns:
+        try:
+            fn()
+            print(f"ok   {fn.__name__}")
+        except Exception:
+            failed += 1
+            print(f"FAIL {fn.__name__}")
+            traceback.print_exc()
+    sys.exit(1 if failed else 0)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python3 -m pytest tests/test_eval_engine.py -v`
+Run: `python3 tests/test_eval_engine.py`
 Expected: FAIL — `ModuleNotFoundError: No module named 'eval_engine'`.
 
 - [ ] **Step 3: Write the implementation**
@@ -779,8 +851,8 @@ def overview() -> dict:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python3 -m pytest tests/test_eval_engine.py -v`
-Expected: PASS (all 6 tests).
+Run: `python3 tests/test_eval_engine.py`
+Expected: all 6 print `ok`, exit 0.
 
 - [ ] **Step 5: Commit**
 
