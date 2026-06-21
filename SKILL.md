@@ -57,10 +57,13 @@ export DASHBOARD_PORT="7873"         # optional — server port
 
 ## Files
 
-- `pipeline.py` — fetch → score → draft → write `data/dashboard_data.json`
-- `server.py` — stdlib HTTP server: `/data`, `/refresh`, `/post`, `/queue`, `/schedule`, `/scheduled`, `/history`, `/bookmark`, `/upload`, `/agent`, `/agent/study`, plus `/linkedin/*` + `/linkedin-agent*`
+- `pipeline.py` — fetch → score → draft → write `data/dashboard_data.json`; runs daily-guarded eval before drafting
+- `server.py` — stdlib HTTP server: `/data`, `/refresh`, `/post`, `/queue`, `/schedule`, `/scheduled`, `/history`, `/bookmark`, `/upload`, `/agent`, `/agent/study`, plus `/linkedin/*` + `/linkedin-agent*` and `/feedback`, `/evals`, `/eval/run`, `/evals/revert`
 - `linkedin_cli.py` — LinkedIn I/O via the **cmux inline browser** CLI (read headless; pre-fill composer)
 - `linkedin.py` — LinkedIn pipeline + state: mine own posts + X signal → ideas → full drafts → `data/linkedin_data.json`
+- `feedback.py` — append-only draft feedback events (discard/like/mark-posted/post, with edit deltas) → `data/feedback.json`
+- `voice_state.py` — machine-managed learned voice state (gold/anti/rules) injected into draft prompts → `data/voice_state.json`
+- `eval_engine.py` — daily auto-eval: kept-vs-discarded drafts → tunes voice_state, logs each run to `data/evals.json`
 - `static/index.html` + `style.css` + `app.js` — dashboard UI
 - `run.sh` — launches server (also exec'd by this skill)
 - `daemon/` — launchd agents: `*-server-daemon.sh` keeps the dashboard server always-on (RunAtLoad + KeepAlive); `*-refresh-daemon.sh` auto-refreshes the pipeline twice daily
@@ -77,6 +80,16 @@ Screens **`10 linkedin ideas`** and **`11 linkedin drafts`** (plus a LinkedIn ta
 Config (in `~/.agent-reach/env.sh`): `LINKEDIN_HANDLE` (your `/in/<handle>`, no leading `@`), optional `LINKEDIN_AGENT` (default `linkedin-voice`), `LINKEDIN_AGENT_MD`.
 
 > **cmux browser constraints:** reading is headless; **publishing needs the LinkedIn cmux pane on-screen** (a headless click won't open the composer — `/linkedin/compose` returns `{ok:false, reason:"pane_hidden"}` with a hint). LinkedIn's infinite scroll only loads a few items when the pane is hidden, and reposts are filtered out, so `my_posts()` returns the reachable *original* posts (often few) — the voice agent leans on your X signal + real material to compensate.
+
+## Draft feedback loop & learned voice
+
+Screen **`12 evals`** surfaces the feedback loop and daily auto-evaluation:
+
+1. **Draft cards gain signals:** each card now has **like** (♥ — positive signal, doesn't post), **mark as posted** (✓ — records a positive signal for a manual post you made elsewhere, fires no tweet), and **discard** (records negative signal).
+2. **Daily eval** runs automatically before drafting — contrasts kept (posted/liked) vs discarded drafts and rewrites the learned voice state (`gold`/`anti`/`rules`) to steer future drafts toward better signals. Every run is logged with its conclusion and diffs.
+3. **12 evals screen** shows: feedback summary (good vs discarded), a "run eval now" button, current learned state, and run history with per-run **revert** to undo a bad tuning.
+
+Edit deltas are captured along with each feedback event, so the eval engine can trace what changed in liked vs discarded drafts.
 
 ## Dependencies
 
