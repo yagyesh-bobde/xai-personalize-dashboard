@@ -868,6 +868,18 @@ def main():
     print(f"[pipeline] history: {len(history['post_texts'])} prior posts, "
           f"{len(history['reply_target_ids'])} replied + "
           f"{len(history['quote_target_ids'])} quoted targets to skip", flush=True)
+    try:
+        import eval_engine
+        ev = eval_engine.run_eval()
+        if ev.get("skipped"):
+            print(f"[pipeline] eval skipped ({ev['skipped']})", flush=True)
+        else:
+            a = ev.get("added", {})
+            print(f"[pipeline] eval ran {ev.get('id')} "
+                  f"(+gold {len(a.get('gold', []))} / +anti {len(a.get('anti', []))} "
+                  f"/ +rules {len(a.get('rules', []))})", flush=True)
+    except Exception as e:
+        sys.stderr.write(f"[pipeline] eval failed (non-fatal): {e}\n")
     drafts = generate_drafts(sig, mine, curated, trending, history=history)
     if not (drafts.get("posts") or drafts.get("replies") or drafts.get("quotes")):
         drafts = fallback_drafts(curated)
