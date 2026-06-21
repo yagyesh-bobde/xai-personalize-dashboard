@@ -57,6 +57,7 @@ const SECTION_META = {
   studio:    { title: "blog studio", sub: "finalized blogs · drafts + titles auto-generated on finalize · pick a title · revise via comments · version history" },
   "linkedin-ideas":  { title: "linkedin ideas",  sub: "your linkedin posts + X signal → valuable post ideas → full drafts" },
   "linkedin-drafts": { title: "linkedin drafts", sub: "edit · save · pre-fill the linkedin composer — you click Post" },
+  evals:     { title: "evals", sub: "what the daily eval learned from your kept vs discarded drafts" },
 };
 
 const PAGE_SIZE = 10;
@@ -203,6 +204,7 @@ function showSection(name) {
   if (name === "studio")    loadStudio();
   if (name === "linkedin-ideas")  loadLinkedin();
   if (name === "linkedin-drafts") loadLinkedin();
+  if (name === "evals") loadEvals();
   if (name === "drafts" || name === "compose") fetchQueuePreview();
 }
 
@@ -1060,6 +1062,88 @@ async function loadHistory() {
   } catch {
     els.listHistory.innerHTML = "";
     els.listHistory.appendChild(empty("could not load history."));
+  }
+}
+
+async function loadEvals() {
+  const summaryEl = $("#evals-summary");
+  const stateEl = $("#evals-state");
+  const runsEl = $("#evals-runs");
+  summaryEl.textContent = "loading…";
+  let data;
+  try {
+    data = await (await fetch("/evals")).json();
+  } catch (e) {
+    summaryEl.textContent = "failed to load evals.";
+    return;
+  }
+  const s = data.summary || { good: 0, bad: 0, by_kind: {}, since_last: 0 };
+
+  summaryEl.innerHTML = "";
+  summaryEl.append(
+    el("div", { class: "eval-stat good" }, [el("b", {}, String(s.good)), el("span", {}, "kept / good")]),
+    el("div", { class: "eval-stat bad" }, [el("b", {}, String(s.bad)), el("span", {}, "discarded")]),
+    el("div", { class: "eval-stat" }, [el("b", {}, String(s.since_last)), el("span", {}, "new since last eval")]),
+  );
+
+  // current learned state
+  const st = data.state || { gold: [], anti: [], rules: [] };
+  stateEl.innerHTML = "";
+  const stateBlock = (title, items, cls) => {
+    if (!items || !items.length) return;
+    stateEl.appendChild(el("h4", { class: "evals-h" }, title));
+    stateEl.appendChild(el("ul", { class: `eval-list ${cls}` },
+      items.map(i => el("li", {}, i))));
+  };
+  stateBlock("currently rewarding (gold)", st.gold, "good");
+  stateBlock("currently avoiding (anti)", st.anti, "bad");
+  stateBlock("extra rules", st.rules, "");
+  if (!st.gold.length && !st.anti.length && !st.rules.length) {
+    stateEl.appendChild(empty("nothing learned yet — discard/keep some drafts, then run an eval."));
+  }
+
+  // run history (already newest-first from the server)
+  runsEl.innerHTML = "";
+  const runs = data.runs || [];
+  if (!runs.length) {
+    runsEl.appendChild(empty("no eval runs yet."));
+  } else {
+    runs.forEach(r => {
+      const card = el("div", { class: "eval-run" + (r.reverted ? " reverted" : "") });
+      card.appendChild(el("div", { class: "eval-run-head" }, [
+        el("span", {}, relTime(r.ts)),
+        el("span", { class: "eval-run-counts" },
+          `${r.counts?.good ?? 0} good · ${r.counts?.bad ?? 0} bad`),
+      ]));
+      card.appendChild(el("p", { class: "eval-conclusion" }, r.conclusion || "(no conclusion)"));
+      const added = r.added || {};
+      const addedBlock = (label, items) => {
+        if (!items || !items.length) return;
+        card.appendChild(el("div", { class: "eval-added" }, [
+          el("span", { class: "eval-added-label" }, label),
+          el("ul", {}, items.map(i => el("li", {}, i))),
+        ]));
+      };
+      addedBlock("+ gold", added.gold);
+      addedBlock("+ anti", added.anti);
+      addedBlock("+ rules", added.rules);
+      if (r.reverted) {
+        card.appendChild(el("span", { class: "eval-reverted-tag" }, "reverted"));
+      } else {
+        const rev = el("button", { class: "btn ghost danger" }, "revert this run");
+        rev.addEventListener("click", async () => {
+          rev.disabled = true;
+          const res = await (await fetch("/evals/revert", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: r.id }),
+          })).json();
+          if (res.ok) { toast("reverted ✓", "ok"); loadEvals(); }
+          else { toast(`revert failed: ${res.error || "?"}`, "error"); rev.disabled = false; }
+        });
+        card.appendChild(rev);
+      }
+      runsEl.appendChild(card);
+    });
   }
 }
 
@@ -3604,6 +3688,26 @@ function setupLinkedin() {
       }
     });
   }
+}
+
+const evalRunBtn = $("#eval-run-btn");
+if (evalRunBtn) {
+  evalRunBtn.addEventListener("click", async () => {
+    evalRunBtn.disabled = true;
+    evalRunBtn.textContent = "running…";
+    try {
+      const res = await (await fetch("/eval/run", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: "{}" })).json();
+      if (res.skipped) toast(`eval skipped (${res.skipped})`, "");
+      else toast("eval done ✓", "ok");
+      loadEvals();
+    } catch (e) {
+      toast(`eval failed: ${e.message}`, "error");
+    } finally {
+      evalRunBtn.disabled = false;
+      evalRunBtn.textContent = "run eval now";
+    }
+  });
 }
 
 // initial

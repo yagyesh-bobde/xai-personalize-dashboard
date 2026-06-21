@@ -2092,3 +2092,22 @@ body::before {
   font-size: 11.5px;
 }
 #thumb-status.error { color: var(--bad); }
+
+/* ─────────────────── evals screen ─────────────────── */
+.evals-summary { display: flex; gap: 1rem; margin-bottom: 1rem; }
+.eval-stat { display: flex; flex-direction: column; padding: .6rem 1rem; border: 1px solid var(--border); border-radius: 8px; }
+.eval-stat b { font-size: 1.4rem; }
+.eval-stat.good b { color: #4caf50; }
+.eval-stat.bad b { color: #e57373; }
+.evals-toolbar { margin-bottom: 1rem; }
+.evals-h { margin: 1.2rem 0 .4rem; opacity: .8; }
+.eval-list { margin: 0 0 .6rem 1rem; }
+.eval-list.good li { color: #9ccc9c; }
+.eval-list.bad li { color: #e0a0a0; }
+.eval-run { border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem; margin-bottom: .8rem; }
+.eval-run.reverted { opacity: .5; }
+.eval-run-head { display: flex; justify-content: space-between; font-size: .85rem; opacity: .7; }
+.eval-conclusion { margin: .5rem 0; }
+.eval-added { font-size: .85rem; margin: .3rem 0; }
+.eval-added-label { font-weight: 600; opacity: .8; }
+.eval-reverted-tag { font-size: .8rem; color: #e57373; }
