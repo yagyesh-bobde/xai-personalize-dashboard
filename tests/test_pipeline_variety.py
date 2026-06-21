@@ -89,6 +89,30 @@ def test_reply_quote_targets_default_to_300():
     assert P.QUOTES_TARGET == 300
 
 
+def test_voice_header_injects_learned_state():
+    orig = P._learned_state
+    try:
+        P._learned_state = lambda: ("## LEARNED — drafts you've kept (match this texture)\n"
+                                    "- kept one\n\n"
+                                    "## LEARNED — drafts I rejected, do NOT write like these\n"
+                                    "- rejected one\n")
+        header = P._voice_header({"top_keywords": ["agents"], "top_accounts": ["@x"]}, [])
+        assert "kept one" in header
+        assert "rejected one" in header
+    finally:
+        P._learned_state = orig
+
+
+def test_voice_header_empty_learned_state_is_noop():
+    orig = P._learned_state
+    try:
+        P._learned_state = lambda: ""
+        header = P._voice_header({"top_keywords": ["agents"], "top_accounts": ["@x"]}, [])
+        assert "LEARNED" not in header
+    finally:
+        P._learned_state = orig
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

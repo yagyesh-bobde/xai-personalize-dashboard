@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import time
+import voice_state
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -430,6 +431,14 @@ QUOTES_SHAPE = """Return JSON ONLY (no preamble, no fences) with this exact shap
 }"""
 
 
+def _learned_state() -> str:
+    """Formatted learned voice blocks from data/voice_state.json (or '')."""
+    try:
+        return voice_state.format_for_prompt(voice_state.load_state())
+    except Exception:
+        return ""
+
+
 def _voice_header(sig: dict, mine: list[dict]) -> str:
     mine_block = "\n".join(f"- {t['text'][:160]}" for t in mine[:8]) or "(none)"
     return (
@@ -441,6 +450,7 @@ def _voice_header(sig: dict, mine: list[dict]) -> str:
         "## My recent posts (do NOT repeat these themes verbatim)\n"
         f"{mine_block}\n\n"
         f"{GOLD_EXAMPLES}\n"
+        + (("\n" + _learned_state()) if _learned_state() else "")
     )
 
 
