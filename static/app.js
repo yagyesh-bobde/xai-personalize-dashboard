@@ -380,6 +380,21 @@ function loadMore(which) {
 function makeDraftCard(draft, kind) {
   const wrap = el("div", { class: "draft", "data-id": draft.id });
   let imagePaths = [];   // local state for THIS card
+  const originalText = draft.text || "";
+  const sendFeedback = (action) => {
+    fetch("/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind,
+        action,
+        original_text: originalText,
+        final_text: textarea.value,
+        target_author: draft.target_author || null,
+        target_text: draft.target_text || null,
+      }),
+    }).catch(() => {});   // best-effort; never block the UI
+  };
 
   if (draft.template) wrap.appendChild(el("span", { class: "template-tag" }, draft.template));
 
@@ -464,8 +479,16 @@ function makeDraftCard(draft, kind) {
   ]);
   queueButtons.add(queueBtn);
   const discardBtn = el("button", { class: "btn ghost danger", title: "discard" }, "discard");
+  const markBtn = el("button", { class: "btn ghost", title: "I posted this manually elsewhere" }, [
+    el("span", { class: "btn-key" }, "✓"),
+    el("span", {}, "mark posted"),
+  ]);
+  const likeBtn = el("button", { class: "btn ghost", title: "good draft — keep as a positive example" }, [
+    el("span", { class: "btn-key" }, "♥"),
+    el("span", {}, "like"),
+  ]);
 
-  const allBtns = [postBtn, schedBtn, queueBtn, discardBtn];
+  const allBtns = [postBtn, schedBtn, queueBtn, discardBtn, markBtn, likeBtn];
   const setDisabled = (v) => allBtns.forEach(b => b.disabled = v);
 
   const doPost = async () => {
@@ -484,6 +507,7 @@ function makeDraftCard(draft, kind) {
       if (data.ok) {
         wrap.classList.add("posted");
         textarea.disabled = true;
+        sendFeedback("post");
         toast(`${kind} posted ✓`, "ok");
       } else {
         toast(`failed: ${typeof data.result === "string" ? data.result : "see server log"}`, "error");
@@ -554,9 +578,23 @@ function makeDraftCard(draft, kind) {
     textarea.disabled = true;
     setDisabled(true);
     queueButtons.delete(queueBtn);
+    sendFeedback("discard");
+  });
+  markBtn.addEventListener("click", () => {
+    sendFeedback("mark_posted");
+    wrap.classList.add("posted");
+    textarea.disabled = true;
+    setDisabled(true);
+    queueButtons.delete(queueBtn);
+    toast("marked as posted ✓", "ok");
+  });
+  likeBtn.addEventListener("click", () => {
+    sendFeedback("like");
+    likeBtn.classList.add("done");
+    toast("saved as a good example ♥", "ok");
   });
 
-  wrap.appendChild(el("div", { class: "actions" }, [uploadLabel, counter, discardBtn, postBtn, schedBtn, queueBtn]));
+  wrap.appendChild(el("div", { class: "actions" }, [uploadLabel, counter, discardBtn, likeBtn, markBtn, postBtn, schedBtn, queueBtn]));
   // ensure label reflects current preview the moment the card mounts
   updateQueueButtons();
   return wrap;
