@@ -24,6 +24,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -36,6 +37,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import blog as blog_mod
+import eval_engine
+import feedback as feedback_mod
+import linkedin as linkedin_mod
 
 ROOT      = Path(__file__).resolve().parent
 DATA_DIR  = ROOT / "data"
@@ -112,12 +116,12 @@ def run_pipeline() -> tuple[bool, str]:
     try:
         proc = subprocess.run(
             [sys.executable, str(PIPELINE)],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True, text=True, timeout=900, env=TW_ENV,
         )
         log = (proc.stdout + "\n" + proc.stderr).strip()
         return proc.returncode == 0, log[-2000:]
     except subprocess.TimeoutExpired:
-        return False, "pipeline timed out after 5 minutes"
+        return False, "pipeline timed out after 15 minutes"
     finally:
         _refresh_lock.release()
 
@@ -514,8 +518,63 @@ def parse_multipart(body: bytes, boundary: str) -> list[dict]:
 
 _sched_stop = threading.Event()
 
+# ── staleness-based auto-refresh fallback ──
+# launchd's twice-daily clock trigger is unreliable on a laptop that's often
+# asleep/off at 08:00/20:00. This fallback refreshes whenever the data is older
+# than REFRESH_MAX_AGE_HOURS, checked continuously while the server is up (the
+# keepalive agent keeps it up whenever the Mac is on). Set to 0 to disable.
+REFRESH_MAX_AGE_HOURS = float(os.environ.get("DASHBOARD_REFRESH_MAX_AGE_HOURS") or 12)
+_STALENESS_CHECK_EVERY = 1800  # seconds between age checks
+_last_staleness_check = 0.0
+_auto_refresh_inflight = threading.Event()
+
+
+def _data_age_hours() -> float | None:
+    """Age of dashboard_data.json by its `generated_at`, in hours. None if missing/unparseable."""
+    try:
+        payload = json.loads(DATA.read_text())
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return None
+    ts = payload.get("generated_at")
+    if not ts:
+        return None
+    try:
+        gen = datetime.fromisoformat(ts)
+    except Exception:
+        return None
+    if gen.tzinfo is None:
+        gen = gen.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - gen).total_seconds() / 3600.0
+
+
+def _auto_refresh_worker():
+    try:
+        ok, log = run_pipeline()
+        tail = log.splitlines()[-1] if log else ""
+        print(f"[auto-refresh] {'ok' if ok else 'FAILED/skipped'} — {tail}", flush=True)
+    finally:
+        _auto_refresh_inflight.clear()
+
+
+def _maybe_auto_refresh():
+    """Trigger a background refresh if the data is missing or stale."""
+    if REFRESH_MAX_AGE_HOURS <= 0:
+        return  # disabled
+    if _auto_refresh_inflight.is_set():
+        return
+    age = _data_age_hours()
+    if age is not None and age < REFRESH_MAX_AGE_HOURS:
+        return
+    _auto_refresh_inflight.set()
+    why = "no data yet" if age is None else f"data is {age:.1f}h old (> {REFRESH_MAX_AGE_HOURS}h)"
+    print(f"[auto-refresh] triggering — {why}", flush=True)
+    threading.Thread(target=_auto_refresh_worker, daemon=True, name="auto-refresh").start()
+
 
 def _scheduler_loop():
+    global _last_staleness_check
     while not _sched_stop.is_set():
         try:
             queue = load_json(SCHED, [])
@@ -554,6 +613,16 @@ def _scheduler_loop():
                 save_json(SCHED, queue)
         except Exception as e:
             sys.stderr.write(f"[scheduler] tick error: {e}\n")
+
+        # staleness-based auto-refresh fallback (throttled, runs on first tick too)
+        nowm = time.monotonic()
+        if nowm - _last_staleness_check >= _STALENESS_CHECK_EVERY:
+            _last_staleness_check = nowm
+            try:
+                _maybe_auto_refresh()
+            except Exception as e:
+                sys.stderr.write(f"[auto-refresh] check error: {e}\n")
+
         _sched_stop.wait(15)
 
 
@@ -636,6 +705,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/history":
             return self._send_json(200, load_json(POSTED, []))
 
+        if path == "/evals":
+            try:
+                return self._send_json(200, eval_engine.overview())
+            except Exception as e:
+                return self._send_json(500, {"error": str(e)})
+
         if path == "/agent":
             if not AGENT_MD.exists():
                 return self._send_json(404, {"error": f"agent file not found: {AGENT_MD}"})
@@ -665,6 +740,18 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send_json(500, {"error": str(e)})
 
+        if path == "/linkedin/data":
+            try:
+                return self._send_json(200, linkedin_mod.read_data())
+            except Exception as e:
+                return self._send_json(500, {"error": str(e)})
+
+        if path == "/linkedin-agent":
+            try:
+                return self._send_json(200, linkedin_mod.read_agent())
+            except Exception as e:
+                return self._send_json(500, {"error": str(e)})
+
         if path.startswith("/static/"):
             name = path[len("/static/"):]
             mime = (
@@ -688,6 +775,13 @@ class Handler(BaseHTTPRequestHandler):
             mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
                     "gif": "image/gif", "webp": "image/webp"}.get(ext, "application/octet-stream")
             return self._send_file(blog_mod.THUMBNAILS_DIR / name, mime)
+
+        if path.startswith("/linkedin-thumbnails/"):
+            name = Path(path[len("/linkedin-thumbnails/"):]).name
+            ext = name.lower().rsplit(".", 1)[-1]
+            mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "gif": "image/gif", "webp": "image/webp"}.get(ext, "application/octet-stream")
+            return self._send_file(linkedin_mod.THUMBNAILS_DIR / name, mime)
 
         self.send_error(404)
 
@@ -718,6 +812,12 @@ class Handler(BaseHTTPRequestHandler):
             ok = blog_mod.delete_idea(state, iid)
             return self._send_json(200 if ok else 404,
                                    {"ok": ok, "id": iid, "error": None if ok else "not found"})
+
+        if path.startswith("/linkedin/drafts/"):
+            return self._send_json(200, linkedin_mod.discard_draft(path.rsplit("/", 1)[-1]))
+
+        if path.startswith("/linkedin/ideas/"):
+            return self._send_json(200, linkedin_mod.discard_idea(path.rsplit("/", 1)[-1]))
 
         self.send_error(404)
 
@@ -752,6 +852,26 @@ class Handler(BaseHTTPRequestHandler):
             if ok:
                 log_posted(kind, text, target_id, image_paths, result, source="manual")
             return self._send_json(200 if ok else 400, {"ok": ok, "result": result, "kind": kind})
+
+        if path == "/feedback":
+            try:
+                rec = feedback_mod.record_event(body)
+                return self._send_json(200, {"ok": True, "event": rec})
+            except Exception as e:
+                return self._send_json(500, {"ok": False, "error": str(e)})
+
+        if path == "/eval/run":
+            try:
+                return self._send_json(200, eval_engine.run_eval(force=True))
+            except Exception as e:
+                return self._send_json(500, {"ok": False, "error": str(e)})
+
+        if path == "/evals/revert":
+            try:
+                res = eval_engine.revert_eval(body.get("id"))
+                return self._send_json(200 if res.get("ok") else 404, res)
+            except Exception as e:
+                return self._send_json(500, {"ok": False, "error": str(e)})
 
         if path == "/bookmark":
             tweet_id = str(body.get("id") or "").strip()
@@ -1074,6 +1194,50 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send_json(500, {"ok": False, "error": str(e)})
 
+        # ── linkedin routes ──
+
+        if path == "/linkedin/refresh":
+            try:
+                return self._send_json(200, linkedin_mod.refresh())
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/linkedin/draft":
+            try:
+                return self._send_json(200, linkedin_mod.draft(body.get("idea_id", "")))
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/linkedin/draft/save":
+            return self._send_json(200, linkedin_mod.save_draft_text(body.get("id", ""), body.get("text", "")))
+
+        if path == "/linkedin/compose":
+            try:
+                return self._send_json(200, linkedin_mod.compose(body.get("id", "")))
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/linkedin/mark-posted":
+            return self._send_json(200, linkedin_mod.mark_posted(body.get("id", "")))
+
+        if path == "/linkedin/thumbnail":
+            try:
+                return self._send_json(200, linkedin_mod.generate_thumbnail(body.get("id", "")))
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
+        if path == "/linkedin-agent":
+            new_content = body.get("content")
+            if not isinstance(new_content, str) or not new_content.strip():
+                return self._send_json(400, {"ok": False, "error": "content required"})
+            return self._send_json(200, linkedin_mod.write_agent(new_content))
+
+        if path == "/linkedin-agent/remine":
+            try:
+                return self._send_json(200, linkedin_mod.remine_voice())
+            except Exception as e:
+                return self._send_json(502, {"ok": False, "error": str(e)})
+
         self.send_error(404)
 
     # ---- multipart upload ----
@@ -1122,6 +1286,39 @@ class Handler(BaseHTTPRequestHandler):
 # ──────────────────────  main  ──────────────────────
 
 
+def _reclaim_port(port: int) -> None:
+    """Ensure the dashboard always runs on the SAME port (single instance).
+
+    If a previous build of this server is still holding `port`, terminate it so
+    the new build takes over the same address — instead of crashing on
+    EADDRINUSE or drifting to another port. Only kills our own server processes
+    (python running this server.py), never unrelated apps on the port."""
+    try:
+        out = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return
+    pids = [p for p in out.split() if p.strip().isdigit() and int(p) != os.getpid()]
+    for pid in pids:
+        try:
+            cmd = subprocess.run(["ps", "-p", pid, "-o", "command="],
+                                 capture_output=True, text=True, timeout=5).stdout
+        except Exception:
+            cmd = ""
+        if "server.py" not in cmd and "personalize" not in cmd:
+            sys.stderr.write(f"[server] port {port} held by another app (pid {pid}); "
+                             f"not killing it. Stop it or set DASHBOARD_PORT.\n")
+            continue
+        sys.stderr.write(f"[server] reclaiming port {port} from old instance (pid {pid})\n")
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.kill(int(pid), sig)
+            except ProcessLookupError:
+                break
+            time.sleep(0.6)
+
+
 def main():
     if not STATIC.exists():
         sys.stderr.write(f"static/ not found at {STATIC}\n"); sys.exit(1)
@@ -1129,7 +1326,16 @@ def main():
     start_scheduler()
     print("[server] scheduler thread started", flush=True)
 
-    httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    _reclaim_port(PORT)
+    httpd = None
+    for attempt in range(5):
+        try:
+            httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+            break
+        except OSError:
+            if attempt == 4:
+                raise
+            time.sleep(0.6)
     url = f"http://127.0.0.1:{PORT}/"
     print(f"[server] dashboard live at {url}", flush=True)
     print("[server] press Ctrl-C to stop", flush=True)

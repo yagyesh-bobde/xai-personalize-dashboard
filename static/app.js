@@ -55,6 +55,9 @@ const SECTION_META = {
   agent:     { title: "agent",      sub: "edit your voice persona · mine new profiles" },
   blog:      { title: "blog ideas", sub: "medium archive + project repos → topics → variations → draft → comment-driven revision" },
   studio:    { title: "blog studio", sub: "finalized blogs · drafts + titles auto-generated on finalize · pick a title · revise via comments · version history" },
+  "linkedin-ideas":  { title: "linkedin ideas",  sub: "your linkedin posts + X signal → valuable post ideas → full drafts" },
+  "linkedin-drafts": { title: "linkedin drafts", sub: "edit · save · pre-fill the linkedin composer — you click Post" },
+  evals:     { title: "evals", sub: "what the daily eval learned from your kept vs discarded drafts" },
 };
 
 const PAGE_SIZE = 10;
@@ -199,6 +202,9 @@ function showSection(name) {
   if (name === "agent")     loadAgent();
   if (name === "blog")      loadBlog();
   if (name === "studio")    loadStudio();
+  if (name === "linkedin-ideas")  loadLinkedin();
+  if (name === "linkedin-drafts") loadLinkedin();
+  if (name === "evals") loadEvals();
   if (name === "drafts" || name === "compose") fetchQueuePreview();
 }
 
@@ -376,6 +382,21 @@ function loadMore(which) {
 function makeDraftCard(draft, kind) {
   const wrap = el("div", { class: "draft", "data-id": draft.id });
   let imagePaths = [];   // local state for THIS card
+  const originalText = draft.text || "";
+  const sendFeedback = (action) => {
+    fetch("/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind,
+        action,
+        original_text: originalText,
+        final_text: textarea.value,
+        target_author: draft.target_author || null,
+        target_text: draft.target_text || null,
+      }),
+    }).catch(() => {});   // best-effort; never block the UI
+  };
 
   if (draft.template) wrap.appendChild(el("span", { class: "template-tag" }, draft.template));
 
@@ -460,8 +481,16 @@ function makeDraftCard(draft, kind) {
   ]);
   queueButtons.add(queueBtn);
   const discardBtn = el("button", { class: "btn ghost danger", title: "discard" }, "discard");
+  const markBtn = el("button", { class: "btn ghost", title: "I posted this manually elsewhere" }, [
+    el("span", { class: "btn-key" }, "✓"),
+    el("span", {}, "mark posted"),
+  ]);
+  const likeBtn = el("button", { class: "btn ghost", title: "good draft — keep as a positive example" }, [
+    el("span", { class: "btn-key" }, "♥"),
+    el("span", {}, "like"),
+  ]);
 
-  const allBtns = [postBtn, schedBtn, queueBtn, discardBtn];
+  const allBtns = [postBtn, schedBtn, queueBtn, discardBtn, markBtn, likeBtn];
   const setDisabled = (v) => allBtns.forEach(b => b.disabled = v);
 
   const doPost = async () => {
@@ -480,6 +509,7 @@ function makeDraftCard(draft, kind) {
       if (data.ok) {
         wrap.classList.add("posted");
         textarea.disabled = true;
+        sendFeedback("post");
         toast(`${kind} posted ✓`, "ok");
       } else {
         toast(`failed: ${typeof data.result === "string" ? data.result : "see server log"}`, "error");
@@ -550,9 +580,23 @@ function makeDraftCard(draft, kind) {
     textarea.disabled = true;
     setDisabled(true);
     queueButtons.delete(queueBtn);
+    sendFeedback("discard");
+  });
+  markBtn.addEventListener("click", () => {
+    sendFeedback("mark_posted");
+    wrap.classList.add("posted");
+    textarea.disabled = true;
+    setDisabled(true);
+    queueButtons.delete(queueBtn);
+    toast("marked as posted ✓", "ok");
+  });
+  likeBtn.addEventListener("click", () => {
+    sendFeedback("like");
+    likeBtn.classList.add("done");
+    toast("saved as a good example ♥", "ok");
   });
 
-  wrap.appendChild(el("div", { class: "actions" }, [uploadLabel, counter, discardBtn, postBtn, schedBtn, queueBtn]));
+  wrap.appendChild(el("div", { class: "actions" }, [uploadLabel, counter, discardBtn, likeBtn, markBtn, postBtn, schedBtn, queueBtn]));
   // ensure label reflects current preview the moment the card mounts
   updateQueueButtons();
   return wrap;
@@ -1021,6 +1065,88 @@ async function loadHistory() {
   }
 }
 
+async function loadEvals() {
+  const summaryEl = $("#evals-summary");
+  const stateEl = $("#evals-state");
+  const runsEl = $("#evals-runs");
+  summaryEl.textContent = "loading…";
+  let data;
+  try {
+    data = await (await fetch("/evals")).json();
+  } catch (e) {
+    summaryEl.textContent = "failed to load evals.";
+    return;
+  }
+  const s = data.summary || { good: 0, bad: 0, by_kind: {}, since_last: 0 };
+
+  summaryEl.innerHTML = "";
+  summaryEl.append(
+    el("div", { class: "eval-stat good" }, [el("b", {}, String(s.good)), el("span", {}, "kept / good")]),
+    el("div", { class: "eval-stat bad" }, [el("b", {}, String(s.bad)), el("span", {}, "discarded")]),
+    el("div", { class: "eval-stat" }, [el("b", {}, String(s.since_last)), el("span", {}, "new since last eval")]),
+  );
+
+  // current learned state
+  const st = data.state || { gold: [], anti: [], rules: [] };
+  stateEl.innerHTML = "";
+  const stateBlock = (title, items, cls) => {
+    if (!items || !items.length) return;
+    stateEl.appendChild(el("h4", { class: "evals-h" }, title));
+    stateEl.appendChild(el("ul", { class: (`eval-list ${cls}`).trim() },
+      items.map(i => el("li", {}, i))));
+  };
+  stateBlock("currently rewarding (gold)", st.gold, "good");
+  stateBlock("currently avoiding (anti)", st.anti, "bad");
+  stateBlock("extra rules", st.rules, "");
+  if (!st.gold.length && !st.anti.length && !st.rules.length) {
+    stateEl.appendChild(empty("nothing learned yet — discard/keep some drafts, then run an eval."));
+  }
+
+  // run history (already newest-first from the server)
+  runsEl.innerHTML = "";
+  const runs = data.runs || [];
+  if (!runs.length) {
+    runsEl.appendChild(empty("no eval runs yet."));
+  } else {
+    runs.forEach(r => {
+      const card = el("div", { class: "eval-run" + (r.reverted ? " reverted" : "") });
+      card.appendChild(el("div", { class: "eval-run-head" }, [
+        el("span", {}, relTime(r.ts)),
+        el("span", { class: "eval-run-counts" },
+          `${r.counts?.good ?? 0} good · ${r.counts?.bad ?? 0} bad`),
+      ]));
+      card.appendChild(el("p", { class: "eval-conclusion" }, r.conclusion || "(no conclusion)"));
+      const added = r.added || {};
+      const addedBlock = (label, items) => {
+        if (!items || !items.length) return;
+        card.appendChild(el("div", { class: "eval-added" }, [
+          el("span", { class: "eval-added-label" }, label),
+          el("ul", {}, items.map(i => el("li", {}, i))),
+        ]));
+      };
+      addedBlock("+ gold", added.gold);
+      addedBlock("+ anti", added.anti);
+      addedBlock("+ rules", added.rules);
+      if (r.reverted) {
+        card.appendChild(el("span", { class: "eval-reverted-tag" }, "reverted"));
+      } else {
+        const rev = el("button", { class: "btn ghost danger" }, "revert this run");
+        rev.addEventListener("click", async () => {
+          rev.disabled = true;
+          const res = await (await fetch("/evals/revert", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: r.id }),
+          })).json();
+          if (res.ok) { toast("reverted ✓", "ok"); loadEvals(); }
+          else { toast(`revert failed: ${res.error || "?"}`, "error"); rev.disabled = false; }
+        });
+        card.appendChild(rev);
+      }
+      runsEl.appendChild(card);
+    });
+  }
+}
+
 function renderHistory() {
   els.listHistory.innerHTML = "";
   const list = state.history;
@@ -1255,6 +1381,17 @@ function setupAgent() {
   });
   agentEls.studyInp.addEventListener("keydown", (e) => {
     if (e.key === "Enter") agentEls.studyGo.click();
+  });
+
+  // ── agent screen tab toggle: x voice ⇄ linkedin voice ──
+  $$("#agent-tabs .tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.agentTab;
+      $$("#agent-tabs .tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+      $("#agent-pane-x")?.classList.toggle("hidden", tab !== "x");
+      $("#agent-pane-linkedin")?.classList.toggle("hidden", tab !== "linkedin");
+      if (tab === "linkedin") loadLinkedinAgent();
+    });
   });
 }
 
@@ -3059,10 +3196,525 @@ function setupBlog() {
   });
 }
 
+// ─────────────────── linkedin (10 ideas · 11 drafts · agent tab) ───────────────────
+
+const liEls = {
+  refresh:      $("#li-refresh"),
+  themes:       $("#li-themes"),
+  themesMeta:   $("#li-themes-meta"),
+  ideaGrid:     $("#li-idea-grid"),
+  ideasEmpty:   $("#li-ideas-empty"),
+  draftGrid:    $("#li-draft-grid"),
+  draftsEmpty:  $("#li-drafts-empty"),
+  navIdeas:     document.querySelector('[data-count="linkedin-ideas"]'),
+  navDrafts:    document.querySelector('[data-count="linkedin-drafts"]'),
+  // agent tab
+  agentText:    $("#li-agent-textarea"),
+  agentSave:    $("#li-agent-save"),
+  agentDiscard: $("#li-agent-discard"),
+  agentRemine:  $("#li-agent-remine"),
+  agentBytes:   $("#li-agent-bytes"),
+  agentMtime:   $("#li-agent-mtime"),
+  agentPath:    $("#li-agent-path"),
+  agentDirty:   $("#li-agent-dirty"),
+};
+
+const liState = {
+  themes:     [],
+  ideas:      [],
+  drafts:     [],
+  loading:    false,
+  agentSaved: "",
+  agentLoaded:false,
+};
+
+async function loadLinkedin() {
+  if (liState.loading) return;
+  liState.loading = true;
+  try {
+    const res  = await fetch("/linkedin/data", { cache: "no-store" });
+    const data = await blogJson(res);
+    liState.themes = data.themes || [];
+    liState.ideas  = data.ideas  || [];
+    liState.drafts = data.drafts || [];
+    renderLinkedinIdeas();
+    renderLinkedinDrafts();
+  } catch (e) {
+    toast(`linkedin load failed: ${e.message}`, "error");
+  } finally {
+    liState.loading = false;
+  }
+}
+
+function renderLinkedinIdeas() {
+  // theme chips
+  liEls.themes.innerHTML = "";
+  (liState.themes || []).forEach(t => liEls.themes.appendChild(chip(t)));
+  liEls.themesMeta.textContent = liState.themes.length
+    ? `${liState.themes.length} mined themes` : "no themes yet";
+
+  // idea cards
+  liEls.ideaGrid.innerHTML = "";
+  const drafted = new Set(liState.drafts.map(d => d.idea_id));
+  if (liEls.navIdeas) liEls.navIdeas.textContent = String(liState.ideas.length || "—");
+
+  if (!liState.ideas.length) {
+    liEls.ideasEmpty.classList.remove("hidden");
+    return;
+  }
+  liEls.ideasEmpty.classList.add("hidden");
+
+  liState.ideas.forEach(idea => {
+    const hasDraft = drafted.has(idea.id) || idea.status === "drafted";
+    const sourceClass = (idea.source || "linkedin").toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    const card = el("div", { class: "idea-card", "data-id": idea.id }, [
+      el("div", { class: "idea-meta" }, [
+        el("span", { class: `idea-source ${sourceClass}` }, idea.source || "linkedin"),
+      ]),
+      el("h3", { class: "idea-title" }, idea.angle || "(no angle)"),
+      idea.why_valuable
+        ? el("div", { class: "idea-angle" }, `▸ ${idea.why_valuable}`)
+        : null,
+      el("div", { class: "idea-actions" }, [
+        (() => {
+          const b = el("button", {
+            class: `btn ${hasDraft ? "ghost" : "primary"}`,
+            title: hasDraft ? "regenerate the full post for this idea" : "draft a full linkedin post from this idea",
+          }, [
+            el("span", { class: "btn-key" }, "✎"),
+            el("span", {}, hasDraft ? "rewrite post" : "write full post"),
+          ]);
+          b.addEventListener("click", () => writeLinkedinPost(idea.id, b));
+          return b;
+        })(),
+        hasDraft ? el("span", { class: "agent-meta-pill", title: "this idea has a draft" }, "▸ draft") : null,
+        (() => {
+          const b = el("button", { class: "btn ghost", title: "discard this idea" }, [
+            el("span", { class: "btn-key" }, "✕"), el("span", {}, "discard"),
+          ]);
+          b.addEventListener("click", () => discardLinkedinIdea(idea.id));
+          return b;
+        })(),
+      ]),
+    ]);
+    liEls.ideaGrid.appendChild(card);
+  });
+}
+
+function renderLinkedinDrafts() {
+  liEls.draftGrid.innerHTML = "";
+  if (liEls.navDrafts) liEls.navDrafts.textContent = String(liState.drafts.length || "—");
+
+  if (!liState.drafts.length) {
+    liEls.draftsEmpty.classList.remove("hidden");
+    return;
+  }
+  liEls.draftsEmpty.classList.add("hidden");
+
+  liState.drafts.forEach(draft => liEls.draftGrid.appendChild(makeLinkedinDraftCard(draft)));
+}
+
+function makeLinkedinDraftCard(draft) {
+  const wrap = el("div", { class: "draft li-draft", "data-id": draft.id });
+  if (draft.status === "posted") wrap.classList.add("posted");
+
+  if (draft.why_valuable) {
+    wrap.appendChild(el("div", { class: "target" }, [
+      el("span", { class: "target-author" }, "why valuable: "),
+      el("span", {}, draft.why_valuable),
+    ]));
+  }
+
+  const textarea = el("textarea", { rows: "10" });
+  textarea.value = draft.text || "";
+  wrap.appendChild(textarea);
+
+  const counter = el("span", { class: "char-count" });
+  const updateCount = () => { counter.textContent = `${textarea.value.length} chars`; };
+  textarea.addEventListener("input", updateCount);
+  updateCount();
+
+  // inline pane-hidden hint (revealed when compose returns pane_hidden)
+  const hint = el("div", { class: "empty hidden", style: "margin-top:10px; text-align:left;" });
+
+  const saveBtn = el("button", { class: "btn ghost", title: "save edits (marks approved)" }, [
+    el("span", { class: "btn-key" }, "⏎"), el("span", {}, "save"),
+  ]);
+  const composeBtn = el("button", { class: "btn primary", title: "pre-fill the linkedin composer (you click Post)" }, [
+    el("span", { class: "btn-key" }, "↗"), el("span", {}, "open in composer"),
+  ]);
+  const postedBtn = el("button", { class: "btn ghost", title: "mark this draft as posted" }, [
+    el("span", { class: "btn-key" }, "✓"), el("span", {}, "mark as posted"),
+  ]);
+  const discardBtn = el("button", { class: "btn ghost danger", title: "discard this draft" }, "discard");
+  const thumbBtn = el("button", { class: "btn ghost", title: "generate a 16:9 thumbnail for this post via ChatGPT" }, [
+    el("span", { class: "btn-key" }, "🖼"),
+    el("span", {}, draft.thumbnail_path ? "regenerate thumbnail" : "generate thumbnail"),
+  ]);
+
+  // thumbnail preview (shown once generated; auto-attaches on "open in composer")
+  const thumbName = (p) => (p || "").split("/").pop();
+  const thumbPreview = el("div", { class: "li-thumb hidden" });
+  const thumbImg = el("img", { alt: "thumbnail", loading: "lazy" });
+  thumbPreview.appendChild(thumbImg);
+  if (draft.thumbnail_path) {
+    thumbImg.src = `/linkedin-thumbnails/${thumbName(draft.thumbnail_path)}`;
+    thumbPreview.classList.remove("hidden");
+  }
+
+  const allBtns = [saveBtn, composeBtn, postedBtn, discardBtn, thumbBtn];
+  const setDisabled = (v) => allBtns.forEach(b => b.disabled = v);
+
+  saveBtn.addEventListener("click", async () => {
+    const text = textarea.value.trim();
+    if (!text) { toast("empty draft", "error"); return; }
+    setDisabled(true);
+    const lbl = saveBtn.querySelector("span:last-child");
+    const prev = lbl.textContent; lbl.textContent = "saving…";
+    try {
+      const res = await fetch("/linkedin/draft/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: draft.id, text }),
+      });
+      const data = await blogJson(res);
+      if (data.error) { toast(`save failed: ${data.error}`, "error"); }
+      else {
+        draft.text = text; draft.status = "approved";
+        toast("saved ✓ (approved)", "ok");
+      }
+    } catch (e) {
+      toast(`save error: ${e.message}`, "error");
+    } finally {
+      setDisabled(false); lbl.textContent = prev;
+    }
+  });
+
+  composeBtn.addEventListener("click", async () => {
+    // persist current edits first so the composer fills the latest text
+    const text = textarea.value.trim();
+    if (!text) { toast("empty draft", "error"); return; }
+    hint.classList.add("hidden");
+    setDisabled(true);
+    const lbl = composeBtn.querySelector("span:last-child");
+    const prev = lbl.textContent; lbl.textContent = "opening composer…";
+    try {
+      if (text !== draft.text) {
+        await fetch("/linkedin/draft/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: draft.id, text }),
+        });
+        draft.text = text;
+      }
+      const res = await fetch("/linkedin/compose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: draft.id }),
+      });
+      const data = await blogJson(res);
+      if (data.ok) {
+        if (data.thumbnail_attached) {
+          toast("composer pre-filled + thumbnail attached ✓ — review and click Post", "ok");
+        } else if (data.thumbnail_hint) {
+          hint.textContent = data.thumbnail_hint;
+          hint.classList.remove("hidden");
+          toast("composer pre-filled ✓ — finish the thumbnail (⌘V) then Post", "ok");
+        } else {
+          toast("composer pre-filled ✓ — review and click Post in linkedin", "ok");
+        }
+      } else if (data.reason === "pane_hidden") {
+        hint.textContent = data.hint || "Bring your LinkedIn pane to the front in cmux, then retry.";
+        hint.classList.remove("hidden");
+        toast("linkedin pane is hidden — bring it to the front, then retry", "error");
+      } else {
+        toast(`compose failed: ${data.hint || data.reason || "?"}`, "error");
+      }
+    } catch (e) {
+      toast(`compose error: ${e.message}`, "error");
+    } finally {
+      setDisabled(false); lbl.textContent = prev;
+    }
+  });
+
+  postedBtn.addEventListener("click", async () => {
+    setDisabled(true);
+    try {
+      const res = await fetch("/linkedin/mark-posted", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: draft.id }),
+      });
+      const data = await blogJson(res);
+      if (data.error) { toast(`failed: ${data.error}`, "error"); setDisabled(false); }
+      else {
+        draft.status = "posted";
+        wrap.classList.add("posted");
+        textarea.disabled = true;
+        toast("marked as posted ✓", "ok");
+      }
+    } catch (e) {
+      toast(`error: ${e.message}`, "error"); setDisabled(false);
+    }
+  });
+
+  discardBtn.addEventListener("click", async () => {
+    if (!confirm("discard this draft?")) return;
+    setDisabled(true);
+    try {
+      const res = await fetch(`/linkedin/drafts/${encodeURIComponent(draft.id)}`, { method: "DELETE" });
+      const data = await blogJson(res);
+      if (data.ok || data.error == null) {
+        liState.drafts = liState.drafts.filter(d => d.id !== draft.id);
+        renderLinkedinDrafts();
+        renderLinkedinIdeas();
+        toast("discarded", "");
+      } else {
+        toast(`discard failed: ${data.error}`, "error"); setDisabled(false);
+      }
+    } catch (e) {
+      toast(`discard error: ${e.message}`, "error"); setDisabled(false);
+    }
+  });
+
+  thumbBtn.addEventListener("click", async () => {
+    setDisabled(true);
+    const lbl = thumbBtn.querySelector("span:last-child");
+    const prev = lbl.textContent; lbl.textContent = "generating… (30-90s)";
+    try {
+      const res = await fetch("/linkedin/thumbnail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: draft.id }),
+      });
+      const data = await blogJson(res);
+      if (data.ok) {
+        draft.thumbnail_path = data.path;
+        thumbImg.src = `${data.url}?t=${Date.now()}`;
+        thumbPreview.classList.remove("hidden");
+        lbl.textContent = "regenerate thumbnail";
+        toast("thumbnail generated ✓ — it attaches when you open in composer", "ok");
+      } else {
+        toast(`thumbnail failed: ${data.error || "?"}`, "error");
+        lbl.textContent = prev;
+      }
+    } catch (e) {
+      toast(`thumbnail error: ${e.message}`, "error");
+      lbl.textContent = prev;
+    } finally {
+      setDisabled(false);
+    }
+  });
+
+  wrap.appendChild(thumbPreview);
+  wrap.appendChild(el("div", { class: "actions" }, [counter, discardBtn, thumbBtn, postedBtn, saveBtn, composeBtn]));
+  wrap.appendChild(hint);
+  return wrap;
+}
+
+async function refreshLinkedin() {
+  liEls.refresh.disabled = true;
+  const lbl = liEls.refresh.querySelector("span:last-child");
+  const prev = lbl.textContent; lbl.textContent = "mining + drafting… (30-90s)";
+  setOverlay(true);
+  try {
+    const res = await fetch("/linkedin/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const data = await blogJson(res);
+    if (data.error) { toast(`refresh failed: ${data.error}`, "error"); return; }
+    liState.themes = data.themes || [];
+    liState.ideas  = data.ideas  || [];
+    liState.drafts = data.drafts || [];
+    renderLinkedinIdeas();
+    renderLinkedinDrafts();
+    toast(`mined ${liState.themes.length} themes · ${liState.ideas.length} ideas ✓`, "ok");
+  } catch (e) {
+    toast(`refresh error: ${e.message}`, "error");
+  } finally {
+    setOverlay(false);
+    liEls.refresh.disabled = false;
+    lbl.textContent = prev;
+  }
+}
+
+async function writeLinkedinPost(ideaId, btn) {
+  btn.disabled = true;
+  const lbl = btn.querySelector("span:last-child");
+  const prev = lbl.textContent; lbl.textContent = "drafting… (30-60s)";
+  setOverlay(true);
+  try {
+    const res = await fetch("/linkedin/draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea_id: ideaId }),
+    });
+    const data = await blogJson(res);
+    if (data.error) { toast(`draft failed: ${data.error}`, "error"); return; }
+    const idx = liState.drafts.findIndex(d => d.id === data.id);
+    if (idx >= 0) liState.drafts[idx] = data; else liState.drafts.push(data);
+    const idea = liState.ideas.find(i => i.id === ideaId);
+    if (idea) idea.status = "drafted";
+    renderLinkedinIdeas();
+    renderLinkedinDrafts();
+    toast("full post drafted ✓ — see 11 linkedin drafts", "ok");
+  } catch (e) {
+    toast(`draft error: ${e.message}`, "error");
+  } finally {
+    setOverlay(false);
+    btn.disabled = false; lbl.textContent = prev;
+  }
+}
+
+async function discardLinkedinIdea(ideaId) {
+  if (!confirm("discard this idea?")) return;
+  try {
+    const res = await fetch(`/linkedin/ideas/${encodeURIComponent(ideaId)}`, { method: "DELETE" });
+    const data = await blogJson(res);
+    if (data.ok || data.error == null) {
+      liState.ideas = liState.ideas.filter(i => i.id !== ideaId);
+      renderLinkedinIdeas();
+      toast("discarded", "");
+    } else {
+      toast(`discard failed: ${data.error}`, "error");
+    }
+  } catch (e) {
+    toast(`discard error: ${e.message}`, "error");
+  }
+}
+
+// ── linkedin-voice agent (tab inside section 07) ──
+
+function setLiAgentDirty(dirty) {
+  liEls.agentDirty.classList.toggle("hidden", !dirty);
+  liEls.agentSave.disabled = !dirty;
+}
+
+async function loadLinkedinAgent() {
+  try {
+    const res  = await fetch("/linkedin-agent", { cache: "no-store" });
+    const data = await blogJson(res);
+    liState.agentSaved = data.content || "";
+    liState.agentLoaded = true;
+    liEls.agentText.value = liState.agentSaved;
+    liEls.agentPath.textContent  = data.path || (data.error ? "(not found)" : "—");
+    liEls.agentMtime.textContent = data.mtime ? relTime(data.mtime) : "—";
+    liEls.agentBytes.textContent = `${liEls.agentText.value.length} bytes`;
+    setLiAgentDirty(false);
+    if (data.error) toast(`linkedin agent: ${data.error}`, "");
+  } catch (e) {
+    toast(`linkedin agent load error: ${e.message}`, "error");
+  }
+}
+
+function setupLinkedin() {
+  if (liEls.refresh) liEls.refresh.addEventListener("click", refreshLinkedin);
+
+  if (liEls.agentText) {
+    liEls.agentText.addEventListener("input", () => {
+      liEls.agentBytes.textContent = `${liEls.agentText.value.length} bytes`;
+      setLiAgentDirty(liEls.agentText.value !== liState.agentSaved);
+    });
+  }
+
+  if (liEls.agentDiscard) {
+    liEls.agentDiscard.addEventListener("click", () => {
+      if (liEls.agentText.value === liState.agentSaved) return;
+      liEls.agentText.value = liState.agentSaved;
+      liEls.agentBytes.textContent = `${liState.agentSaved.length} bytes`;
+      setLiAgentDirty(false);
+      toast("changes discarded", "");
+    });
+  }
+
+  if (liEls.agentSave) {
+    liEls.agentSave.addEventListener("click", async () => {
+      const content = liEls.agentText.value;
+      if (content === liState.agentSaved) return;
+      liEls.agentSave.disabled = true;
+      const lbl = liEls.agentSave.querySelector("span:last-child");
+      const prev = lbl.textContent; lbl.textContent = "saving…";
+      try {
+        const res = await fetch("/linkedin-agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        const data = await blogJson(res);
+        if (data.ok) {
+          liState.agentSaved = content;
+          setLiAgentDirty(false);
+          toast("saved ✓", "ok");
+        } else {
+          toast(`save failed: ${data.error || "?"}`, "error");
+          liEls.agentSave.disabled = false;
+        }
+      } catch (e) {
+        toast(`save error: ${e.message}`, "error");
+        liEls.agentSave.disabled = false;
+      } finally {
+        lbl.textContent = prev;
+      }
+    });
+  }
+
+  if (liEls.agentRemine) {
+    liEls.agentRemine.addEventListener("click", async () => {
+      liEls.agentRemine.disabled = true;
+      const lbl = liEls.agentRemine.querySelector("span:last-child");
+      const prev = lbl.textContent; lbl.textContent = "re-mining posts… (20-40s)";
+      setOverlay(true);
+      try {
+        const res = await fetch("/linkedin-agent/remine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        const data = await blogJson(res);
+        if (data.ok) {
+          toast(`re-mined ${data.count || 0} posts into the agent ✓`, "ok");
+          await loadLinkedinAgent();
+        } else {
+          toast(`re-mine failed: ${data.reason || data.error || "?"}`, "error");
+        }
+      } catch (e) {
+        toast(`re-mine error: ${e.message}`, "error");
+      } finally {
+        setOverlay(false);
+        liEls.agentRemine.disabled = false;
+        lbl.textContent = prev;
+      }
+    });
+  }
+}
+
+const evalRunBtn = $("#eval-run-btn");
+if (evalRunBtn) {
+  evalRunBtn.addEventListener("click", async () => {
+    evalRunBtn.disabled = true;
+    evalRunBtn.textContent = "running…";
+    try {
+      const res = await (await fetch("/eval/run", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: "{}" })).json();
+      if (res.skipped) toast(`eval skipped (${res.skipped})`, "");
+      else toast("eval done ✓", "ok");
+      loadEvals();
+    } catch (e) {
+      toast(`eval failed: ${e.message}`, "error");
+    } finally {
+      evalRunBtn.disabled = false;
+      evalRunBtn.textContent = "run eval now";
+    }
+  });
+}
+
 // initial
 setupAgent();
 setupCompose();
 setupBlog();
+setupLinkedin();
 setupThumbModal();
 const initialHash = (location.hash || "#foryou").slice(1);
 if (SECTION_META[initialHash]) showSection(initialHash);

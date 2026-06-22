@@ -1418,6 +1418,11 @@ body::before {
 .idea-card .idea-source.workflow,
 .idea-card .idea-source.medium-pattern,
 .idea-card .idea-source.medium-archive { color: var(--text-2); }
+.idea-card .idea-source.linkedin { color: #4aa3ff; border-color: rgba(74,163,255,0.35); }
+.idea-card .idea-source.x-signal { color: var(--accent); border-color: var(--accent-d); }
+
+/* linkedin drafts — long-form posts, taller editor */
+.li-draft textarea { min-height: 200px; line-height: 1.5; }
 
 .idea-card h3.idea-title {
   font: 16px/1.35 var(--sans);
@@ -2002,6 +2007,16 @@ body::before {
 }
 
 
+/* linkedin draft thumbnail preview */
+.li-thumb { margin: 10px 0 2px; }
+.li-thumb.hidden { display: none; }
+.li-thumb img {
+  width: 100%; max-width: 440px; aspect-ratio: 16 / 9; object-fit: cover;
+  background: var(--bg-2);
+  border: 1px solid var(--border); border-radius: var(--r);
+  display: block;
+}
+
 /* thumbnail panel */
 .thumb-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 900px) { .thumb-body { grid-template-columns: 1fr; } }
@@ -2077,3 +2092,22 @@ body::before {
   font-size: 11.5px;
 }
 #thumb-status.error { color: var(--bad); }
+
+/* ─────────────────── evals screen ─────────────────── */
+.evals-summary { display: flex; gap: 1rem; margin-bottom: 1rem; }
+.eval-stat { display: flex; flex-direction: column; padding: .6rem 1rem; border: 1px solid var(--border); border-radius: 8px; }
+.eval-stat b { font-size: 1.4rem; }
+.eval-stat.good b { color: #4caf50; }
+.eval-stat.bad b { color: #e57373; }
+.evals-toolbar { margin-bottom: 1rem; }
+.evals-h { margin: 1.2rem 0 .4rem; opacity: .8; }
+.eval-list { margin: 0 0 .6rem 1rem; }
+.eval-list.good li { color: #9ccc9c; }
+.eval-list.bad li { color: #e0a0a0; }
+.eval-run { border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem; margin-bottom: .8rem; }
+.eval-run.reverted { opacity: .5; }
+.eval-run-head { display: flex; justify-content: space-between; font-size: .85rem; opacity: .7; }
+.eval-conclusion { margin: .5rem 0; }
+.eval-added { font-size: .85rem; margin: .3rem 0; }
+.eval-added-label { font-weight: 600; opacity: .8; }
+.eval-reverted-tag { font-size: .8rem; color: #e57373; }
