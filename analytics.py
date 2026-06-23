@@ -238,3 +238,72 @@ def compute_report(history: dict, now, window_days=WINDOW_DAYS) -> dict:
         "top": [card(r) for r in ranked[:5]],
         "bottom": [card(r) for r in ranked[-5:][::-1]],
     }
+
+
+def build_insight_prompt(report: dict) -> str:
+    def cards(items):
+        return "\n".join(
+            f"- [{c['kind']}] eng_rate={c['eng_rate']} views={c['views']} :: {c['text']}"
+            for c in items) or "(none)"
+    kw = ", ".join(f"{k['token']}(x{k['lift']})" for k in report["keywords"][:12]) or "(none)"
+    return (
+        "You analyze what's working on an X (Twitter) account. Engagement rate = "
+        "(likes+rts+replies+quotes+bookmarks)/views.\n\n"
+        f"## Best performers\n{cards(report['top'])}\n\n"
+        f"## Worst performers\n{cards(report['bottom'])}\n\n"
+        f"## High-lift keywords\n{kw}\n\n"
+        f"## Format/timing breakdowns (avg_eng_rate, count)\n"
+        f"{json.dumps(report['breakdowns'], ensure_ascii=False)}\n\n"
+        "## Task\nReturn JSON ONLY (no fences, start with `{` end with `}`):\n"
+        "{\n"
+        '  "themes_working": ["<themes/topics that resonate; 0-5>"],\n'
+        '  "themes_flat": ["<themes that fall flat; 0-5>"],\n'
+        '  "timing_insight": "<1-2 sentences on best posting times>",\n'
+        '  "format_insight": "<1-2 sentences on post type/length/media/link>",\n'
+        '  "recommendations": ["<concrete next-post suggestions; 2-5>"]\n'
+        "}"
+    )
+
+
+def _default_caller(prompt: str):
+    import pipeline
+    return pipeline._claude_json(prompt, timeout=300, label="analytics")
+
+
+def load_report() -> dict:
+    try:
+        return json.loads(REPORT_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _should_run(now: datetime):
+    rep = load_report()
+    last = _parse_iso(rep.get("generated_at")) if rep else None
+    if last and (now - last) < timedelta(hours=CADENCE_HOURS):
+        return False, "cadence"
+    return True, ""
+
+
+def run_analytics(force=False, now=None, fetcher=None, caller=None) -> dict:
+    now = now or datetime.now(timezone.utc)
+    if not force:
+        ok, reason = _should_run(now)
+        if not ok:
+            return {"skipped": reason}
+    caller = caller or _default_caller
+    hist = snapshot_metrics(now, fetcher=fetcher)
+    report = compute_report(hist, now)
+    try:
+        report["insights"] = caller(build_insight_prompt(report)) or None
+    except Exception:
+        report["insights"] = None
+    report["ts"] = now.isoformat()
+    report["generated_at"] = now.isoformat()
+    report["window_days"] = WINDOW_DAYS
+    _atomic_write_json(REPORT_PATH, report)
+    return report
+
+
+def overview() -> dict:
+    return load_report()

@@ -147,6 +147,41 @@ def test_compute_report_window_excludes_old():
     assert rep["n_posts"] == 0
 
 
+FAKE_INSIGHT = {"themes_working": ["agent tooling"], "themes_flat": ["memes"],
+                "timing_insight": "evenings win", "format_insight": "short text wins",
+                "recommendations": ["post more agent content in the evening"]}
+
+
+def test_run_analytics_writes_report_with_insights():
+    tmp = Path(tempfile.mkdtemp()); _wire(tmp)
+    now = datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc)
+    posts = [_post("1", "agent tooling wins", 200, 30, "2026-06-23T10:00:00+00:00", "2026-06-23 19:30"),
+             _post("2", "random meme", 200, 1, "2026-06-22T10:00:00+00:00", "2026-06-22 09:30")]
+    rep = AN.run_analytics(force=True, now=now, fetcher=lambda: posts, caller=lambda p: FAKE_INSIGHT)
+    assert "skipped" not in rep
+    assert rep["n_posts"] == 2
+    assert rep["insights"]["timing_insight"] == "evenings win"
+    assert AN.load_report()["insights"]["themes_working"] == ["agent tooling"]
+
+
+def test_run_analytics_survives_llm_failure():
+    tmp = Path(tempfile.mkdtemp()); _wire(tmp)
+    now = datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc)
+    posts = [_post("1", "agent tooling", 200, 30, "2026-06-23T10:00:00+00:00", "2026-06-23 19:30")]
+    rep = AN.run_analytics(force=True, now=now, fetcher=lambda: posts, caller=lambda p: None)
+    assert rep["insights"] is None
+    assert rep["n_posts"] == 1            # deterministic report still shipped
+
+
+def test_run_analytics_cadence_guard():
+    tmp = Path(tempfile.mkdtemp()); _wire(tmp)
+    posts = [_post("1", "agent tooling", 200, 30, "2026-06-23T10:00:00+00:00", "2026-06-23 19:30")]
+    now = datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc)
+    AN.run_analytics(force=True, now=now, fetcher=lambda: posts, caller=lambda p: FAKE_INSIGHT)
+    res = AN.run_analytics(now=now + timedelta(hours=1), fetcher=lambda: posts, caller=lambda p: FAKE_INSIGHT)
+    assert res == {"skipped": "cadence"}
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
