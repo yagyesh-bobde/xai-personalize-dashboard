@@ -58,6 +58,7 @@ const SECTION_META = {
   "linkedin-ideas":  { title: "linkedin ideas",  sub: "your linkedin posts + X signal → valuable post ideas → full drafts" },
   "linkedin-drafts": { title: "linkedin drafts", sub: "edit · save · pre-fill the linkedin composer — you click Post" },
   evals:     { title: "evals", sub: "what the daily eval learned from your kept vs discarded drafts" },
+  analytics: { title: "analytics", sub: "what's working on X — by engagement rate, format, timing, keywords" },
 };
 
 const PAGE_SIZE = 10;
@@ -205,6 +206,7 @@ function showSection(name) {
   if (name === "linkedin-ideas")  loadLinkedin();
   if (name === "linkedin-drafts") loadLinkedin();
   if (name === "evals") loadEvals();
+  if (name === "analytics") loadAnalytics();
   if (name === "drafts" || name === "compose") fetchQueuePreview();
 }
 
@@ -1191,6 +1193,71 @@ async function loadEvals() {
       runsEl.appendChild(card);
     });
   }
+}
+
+// ─────────────────── analytics (13) ───────────────────
+
+async function loadAnalytics() {
+  const meta = $("#analytics-meta");
+  const body = $("#analytics-body");
+  body.textContent = "loading…";
+  let d;
+  try { d = await (await fetch("/analytics")).json(); }
+  catch { body.textContent = "failed to load analytics."; return; }
+
+  if (!d || !d.generated_at) {
+    body.textContent = "no analysis yet — click “run analysis now”. (History builds up daily.)";
+    meta.textContent = "";
+    return;
+  }
+  meta.textContent = `${d.n_posts} posts · ${d.window_days}d window · updated ${new Date(d.generated_at).toLocaleString()} · v1 excludes replies`;
+  body.innerHTML = "";
+
+  const ins = d.insights;
+  if (ins) {
+    const box = el("div", { class: "evals-state" });
+    box.appendChild(el("h4", { class: "evals-h" }, "what's working"));
+    if (ins.themes_working?.length) box.appendChild(el("p", {}, "✅ themes working: " + ins.themes_working.join(", ")));
+    if (ins.themes_flat?.length)    box.appendChild(el("p", {}, "⬇️ falls flat: " + ins.themes_flat.join(", ")));
+    if (ins.timing_insight) box.appendChild(el("p", {}, "🕒 " + ins.timing_insight));
+    if (ins.format_insight) box.appendChild(el("p", {}, "✍️ " + ins.format_insight));
+    (ins.recommendations || []).forEach(r => box.appendChild(el("p", {}, "→ " + r)));
+    body.appendChild(box);
+  }
+
+  const bd = (title, obj) => {
+    const box = el("div", { class: "evals-state" });
+    box.appendChild(el("h4", { class: "evals-h" }, title));
+    Object.entries(obj).sort((a, b) => b[1].avg_eng_rate - a[1].avg_eng_rate)
+      .forEach(([k, v]) => box.appendChild(
+        el("p", {}, `${k}: ${(v.avg_eng_rate * 100).toFixed(1)}% eng · ${Math.round(v.avg_views)} views · n=${v.count}`)));
+    body.appendChild(box);
+  };
+  bd("by type", d.breakdowns.type);
+  bd("by format (media)", d.breakdowns.media);
+  bd("by length", d.breakdowns.length);
+  bd("best hours", d.breakdowns.hour);
+  bd("best weekdays", d.breakdowns.weekday);
+
+  if (d.keywords?.length) {
+    const box = el("div", { class: "evals-state" });
+    box.appendChild(el("h4", { class: "evals-h" }, "keywords working"));
+    d.keywords.slice(0, 15).forEach(k =>
+      box.appendChild(el("p", {}, `${k.token} — ${k.lift}× lift (n=${k.support})`)));
+    body.appendChild(box);
+  }
+
+  const cards = (title, arr) => {
+    const box = el("div", { class: "evals-state" });
+    box.appendChild(el("h4", { class: "evals-h" }, title));
+    (arr || []).forEach(c => {
+      const p = el("p", {}, `${(c.eng_rate * 100).toFixed(1)}% · ${c.views} views · ${c.text.slice(0, 120)}`);
+      box.appendChild(p);
+    });
+    body.appendChild(box);
+  };
+  cards("top posts", d.top);
+  cards("bottom posts", d.bottom);
 }
 
 function renderHistory() {
@@ -3735,6 +3802,13 @@ function setupLinkedin() {
     });
   }
 }
+
+document.getElementById("analytics-run")?.addEventListener("click", async (e) => {
+  const btn = e.target;
+  btn.disabled = true; btn.textContent = "analyzing…";
+  try { await fetch("/analytics/run", { method: "POST" }); await loadAnalytics(); }
+  finally { btn.disabled = false; btn.textContent = "run analysis now"; }
+});
 
 const evalRunBtn = $("#eval-run-btn");
 if (evalRunBtn) {
