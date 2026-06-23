@@ -201,8 +201,8 @@ def compute_report(history: dict, now, window_days=WINDOW_DAYS) -> dict:
         "media":   _group(recs, lambda r: "with_media" if r["has_media"] else "text_only"),
         "link":    _group(recs, lambda r: "with_link" if r["has_link"] else "no_link"),
         "length":  _group(recs, lambda r: classify_length(r["text"])),
-        "hour":    _group(recs, lambda r: local_hour(r["created_local"]) if r["created_local"] else -1),
-        "weekday": _group(recs, lambda r: local_weekday(r["created_local"]) if r["created_local"] else -1),
+        "hour":    _group([r for r in recs if r["created_local"]], lambda r: local_hour(r["created_local"])),
+        "weekday": _group([r for r in recs if r["created_local"]], lambda r: local_weekday(r["created_local"])),
     }
 
     # keyword lift
