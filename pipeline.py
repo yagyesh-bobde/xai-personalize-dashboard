@@ -23,6 +23,7 @@ import subprocess
 import sys
 import time
 import voice_state
+import analytics
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -439,6 +440,14 @@ def _learned_state() -> str:
         return ""
 
 
+def _performance_state() -> str:
+    """Formatted 'what's working' block from data/analytics.json (or '')."""
+    try:
+        return analytics.format_for_prompt(analytics.load_report())
+    except Exception:
+        return ""
+
+
 def _voice_header(sig: dict, mine: list[dict]) -> str:
     mine_block = "\n".join(f"- {t['text'][:160]}" for t in mine[:8]) or "(none)"
     learned = _learned_state()
@@ -461,8 +470,11 @@ def _posts_prompt(sig: dict, mine: list[dict], inspo: list[dict], count: int,
     kw = keywords if keywords is not None else sig.get("top_keywords", [])
     lane_block = (f"## This batch's angle (bias toward this; don't make every post fit it)\n{lane}\n\n"
                   if lane else "")
+    perf = _performance_state()
+    perf_block = (perf + "\n") if perf else ""
     return (
         _voice_header(sig, mine)
+        + perf_block
         + lane_block
         + f"## Themes to draw from for THIS batch (stay close to these — other batches cover the rest)\n"
         + (", ".join(kw) or "(none)") + "\n\n"

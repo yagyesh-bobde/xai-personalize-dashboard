@@ -113,6 +113,60 @@ def test_voice_header_empty_learned_state_is_noop():
         P._learned_state = orig
 
 
+_SIG = {"top_keywords": ["agents"], "top_accounts": ["@x"]}
+_MINE = [{"text": "shipped a thing"}]
+
+
+def _stub_report(P, report):
+    """Point pipeline.analytics.load_report at a fixed report for one test."""
+    import analytics
+    orig = analytics.load_report
+    analytics.load_report = lambda: report
+    return orig
+
+
+def test_posts_prompt_includes_performance_block():
+    import analytics
+    orig = _stub_report(P, {
+        "window_days": 30,
+        "keywords": [{"token": "agents", "lift": 1.8}],
+        "insights": {"themes_working": ["agent tooling"], "themes_flat": [],
+                     "format_insight": "short wins", "recommendations": ["post agents"]},
+    })
+    try:
+        out = P._posts_prompt(_SIG, _MINE, [], 3)
+        assert "WHAT'S ACTUALLY WORKING ON X" in out
+        assert "agent tooling" in out
+    finally:
+        analytics.load_report = orig
+
+
+def test_replies_and_quotes_omit_performance_block():
+    import analytics
+    orig = _stub_report(P, {
+        "window_days": 30, "keywords": [],
+        "insights": {"themes_working": ["agent tooling"], "themes_flat": [],
+                     "format_insight": "short wins", "recommendations": []},
+    })
+    chunk = [{"id": "t1", "author": "@a", "text": "hello world"}]
+    try:
+        assert "WHAT'S ACTUALLY WORKING ON X" not in P._replies_prompt(_SIG, _MINE, chunk)
+        assert "WHAT'S ACTUALLY WORKING ON X" not in P._quotes_prompt(_SIG, _MINE, chunk)
+    finally:
+        analytics.load_report = orig
+
+
+def test_posts_prompt_omits_block_when_report_empty():
+    import analytics
+    orig = _stub_report(P, {})
+    try:
+        out = P._posts_prompt(_SIG, _MINE, [], 3)
+        assert "WHAT'S ACTUALLY WORKING ON X" not in out
+        assert "## Task" in out          # still a valid prompt
+    finally:
+        analytics.load_report = orig
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
