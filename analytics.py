@@ -265,6 +265,50 @@ def build_insight_prompt(report: dict) -> str:
     )
 
 
+def format_for_prompt(report: dict) -> str:
+    """Render analytics.json into a compact 'what's working' block for the
+    posts prompt, or '' when there's nothing useful. Never raises."""
+    report = report or {}
+    insights = report.get("insights") or {}
+    if not insights:
+        return ""
+
+    def joined(key):
+        vals = [str(v).strip() for v in (insights.get(key) or []) if str(v).strip()]
+        return ", ".join(vals)
+
+    working = joined("themes_working")
+    flat = joined("themes_flat")
+    fmt = (insights.get("format_insight") or "").strip()
+    recs = joined("recommendations")
+
+    kws = []
+    for k in (report.get("keywords") or []):
+        lift = k.get("lift") or 0
+        if lift > 1.0:
+            kws.append(f"{k['token']}(x{lift})")
+        if len(kws) >= 8:
+            break
+
+    lines = []
+    if working:
+        lines.append(f"Themes that resonate: {working}")
+    if flat:
+        lines.append(f"Themes that fall flat: {flat}")
+    if fmt:
+        lines.append(f"Format: {fmt}")
+    if kws:
+        lines.append("Topics that overperform: " + ", ".join(kws))
+    if recs:
+        lines.append(f"Lean into: {recs}")
+    if not lines:
+        return ""
+
+    window = report.get("window_days", WINDOW_DAYS)
+    header = f"## WHAT'S ACTUALLY WORKING ON X (from real engagement, last {window}d)"
+    return header + "\n" + "\n".join(lines) + "\n"
+
+
 def _default_caller(prompt: str):
     import pipeline
     return pipeline._claude_json(prompt, timeout=300, label="analytics")

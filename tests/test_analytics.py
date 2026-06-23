@@ -182,6 +182,60 @@ def test_run_analytics_cadence_guard():
     assert res == {"skipped": "cadence"}
 
 
+def test_format_for_prompt_full():
+    report = {
+        "window_days": 30,
+        "keywords": [
+            {"token": "agents", "lift": 1.8, "support": 4, "avg_eng_rate": 0.1},
+            {"token": "metro", "lift": 1.2, "support": 3, "avg_eng_rate": 0.07},
+            {"token": "memes", "lift": 0.5, "support": 3, "avg_eng_rate": 0.02},
+        ],
+        "insights": {
+            "themes_working": ["agent tooling", "shipping solo"],
+            "themes_flat": ["memes"],
+            "timing_insight": "evenings win",
+            "format_insight": "short text-only wins",
+            "recommendations": ["post more agent content"],
+        },
+    }
+    out = AN.format_for_prompt(report)
+    assert "WHAT'S ACTUALLY WORKING ON X" in out
+    assert "30d" in out
+    assert "agent tooling, shipping solo" in out          # themes_working joined
+    assert "memes" in out                                 # themes_flat
+    assert "short text-only wins" in out                  # format_insight
+    assert "agents(x1.8)" in out and "metro(x1.2)" in out # high-lift keywords
+    assert "memes(x0.5)" not in out                       # lift <= 1.0 dropped
+    assert "post more agent content" in out               # recommendations
+    assert "evenings win" not in out                      # timing_insight excluded
+    assert out.endswith("\n")
+
+
+def test_format_for_prompt_no_insights():
+    assert AN.format_for_prompt({"keywords": [], "insights": None}) == ""
+
+
+def test_format_for_prompt_empty_report():
+    assert AN.format_for_prompt({}) == ""
+
+
+def test_format_for_prompt_all_fields_empty():
+    report = {"keywords": [{"token": "x", "lift": 0.9}],
+              "insights": {"themes_working": [], "themes_flat": [],
+                           "format_insight": "", "recommendations": []}}
+    assert AN.format_for_prompt(report) == ""
+
+
+def test_format_for_prompt_omits_keyword_line_when_no_lift():
+    report = {"keywords": [{"token": "x", "lift": 0.9}],
+              "insights": {"themes_working": ["agent tooling"], "themes_flat": [],
+                           "format_insight": "", "recommendations": []}}
+    out = AN.format_for_prompt(report)
+    assert "agent tooling" in out
+    assert "Topics that overperform" not in out
+    assert out.endswith("\n")
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
