@@ -79,3 +79,84 @@ def local_hour(created_local: str) -> int:
 
 def local_weekday(created_local: str) -> int:
     return datetime.strptime(created_local, "%Y-%m-%d %H:%M").weekday()
+
+
+def load_history() -> dict:
+    try:
+        return json.loads(HISTORY_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_history(hist: dict) -> None:
+    _atomic_write_json(HISTORY_PATH, hist)
+
+
+def _kind_map() -> dict:
+    """tweet_id -> kind/source from posted.json (best-effort attribution)."""
+    try:
+        posted = json.loads(POSTED_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    out = {}
+    for p in posted:
+        tid = p.get("tweet_id")
+        if tid:
+            out[tid] = {"kind": p.get("kind", "post"), "source": p.get("source", "unknown")}
+    return out
+
+
+def _parse_iso(ts: str):
+    try:
+        return datetime.fromisoformat((ts or "").replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def snapshot_metrics(now: datetime, fetcher=None) -> dict:
+    fetcher = fetcher or _default_fetcher
+    hist = load_history()
+    kinds = _kind_map()
+    cutoff = now - timedelta(days=WINDOW_DAYS)
+    today = now.date().isoformat()
+    for raw in (fetcher() or []):
+        if raw.get("isRetweet"):
+            continue
+        tid = raw.get("id")
+        created = _parse_iso(raw.get("createdAtISO"))
+        if not tid or not created or created < cutoff:
+            continue
+        attrib = kinds.get(tid, {})
+        kind = attrib.get("kind", "post")
+        if kind == "reply":            # v1 excludes replies
+            continue
+        text = raw.get("text", "")
+        entry = hist.setdefault(tid, {"snapshots": []})
+        entry.update({
+            "created_at": raw.get("createdAtISO"),
+            "created_local": raw.get("createdAtLocal"),
+            "kind": kind,
+            "source": attrib.get("source", "unknown"),
+            "text": text,
+            "has_media": bool(raw.get("media")),
+            "has_link": has_link(text, raw.get("urls")),
+            "lang": raw.get("lang"),
+        })
+        snaps = entry["snapshots"]
+        if snaps and (_parse_iso(snaps[-1]["ts"]) or now).date().isoformat() == today:
+            continue                   # already snapshotted today
+        m = raw.get("metrics", {})
+        snaps.append({"ts": now.isoformat(), "likes": m.get("likes", 0),
+                      "retweets": m.get("retweets", 0), "replies": m.get("replies", 0),
+                      "quotes": m.get("quotes", 0), "views": m.get("views", 0),
+                      "bookmarks": m.get("bookmarks", 0)})
+    save_history(hist)
+    return hist
+
+
+def _default_fetcher():
+    import pipeline
+    res = pipeline.twitter_json(["user-posts", f"@{pipeline.USERNAME}", "-n", str(FETCH_N)], timeout=150)
+    if isinstance(res, dict):
+        return res.get("data") or []
+    return res or []

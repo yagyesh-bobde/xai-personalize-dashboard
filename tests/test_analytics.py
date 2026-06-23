@@ -49,6 +49,57 @@ def test_local_hour_and_weekday():
     assert AN.local_weekday("2026-06-23 19:58") == 1
 
 
+def _post(pid, text, views, likes, created_iso, created_local,
+          media=None, urls=None, retweet=False, lang="en"):
+    return {
+        "id": pid, "text": text, "isRetweet": retweet, "lang": lang,
+        "createdAtISO": created_iso, "createdAtLocal": created_local,
+        "media": media or [], "urls": urls or [],
+        "metrics": {"likes": likes, "retweets": 0, "replies": 0,
+                    "quotes": 0, "views": views, "bookmarks": 0},
+    }
+
+
+def _wire(tmp):
+    AN.REPORT_PATH = tmp / "analytics.json"
+    AN.HISTORY_PATH = tmp / "analytics_history.json"
+    AN.POSTED_PATH = tmp / "posted.json"
+
+
+def test_snapshot_upserts_and_skips_retweets():
+    tmp = Path(tempfile.mkdtemp()); _wire(tmp)
+    now = datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc)
+    posts = [
+        _post("1", "hello world", 100, 5, "2026-06-24T10:00:00+00:00", "2026-06-24 15:30"),
+        _post("2", "a retweet", 9, 0, "2026-06-24T09:00:00+00:00", "2026-06-24 14:30", retweet=True),
+    ]
+    hist = AN.snapshot_metrics(now, fetcher=lambda: posts)
+    assert "1" in hist and "2" not in hist          # retweet skipped
+    assert len(hist["1"]["snapshots"]) == 1
+    assert hist["1"]["snapshots"][0]["views"] == 100
+
+
+def test_snapshot_dedupes_same_day_appends_next_day():
+    tmp = Path(tempfile.mkdtemp()); _wire(tmp)
+    posts = [_post("1", "hi", 100, 5, "2026-06-24T10:00:00+00:00", "2026-06-24 15:30")]
+    AN.snapshot_metrics(datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc), fetcher=lambda: posts)
+    AN.snapshot_metrics(datetime(2026, 6, 24, 20, 0, tzinfo=timezone.utc), fetcher=lambda: posts)
+    hist = AN.load_history()
+    assert len(hist["1"]["snapshots"]) == 1          # same day → no second snapshot
+    posts2 = [_post("1", "hi", 250, 9, "2026-06-24T10:00:00+00:00", "2026-06-24 15:30")]
+    hist = AN.snapshot_metrics(datetime(2026, 6, 25, 12, 0, tzinfo=timezone.utc), fetcher=lambda: posts2)
+    assert len(hist["1"]["snapshots"]) == 2          # next day → appended
+    assert hist["1"]["snapshots"][-1]["views"] == 250
+
+
+def test_snapshot_drops_out_of_window_posts():
+    tmp = Path(tempfile.mkdtemp()); _wire(tmp)
+    now = datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc)
+    posts = [_post("old", "ancient", 100, 5, "2026-04-01T10:00:00+00:00", "2026-04-01 15:30")]
+    hist = AN.snapshot_metrics(now, fetcher=lambda: posts)
+    assert hist == {}
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
