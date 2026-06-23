@@ -159,6 +159,34 @@ body::before {
   background: rgba(29,155,240,0.05);
 }
 
+/* ── nav: hidden-tabs accordion ── */
+.nav-accordion {
+  display: flex; align-items: center; gap: 8px;
+  margin: 6px 8px 2px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-accordion:hover { background: var(--panel-2); color: var(--text-2); }
+.nav-accordion-caret {
+  display: inline-block; min-width: 10px;
+  font-size: 9px; color: var(--muted-2);
+  transition: transform 0.18s ease;
+}
+.nav-accordion[aria-expanded="true"] .nav-accordion-caret { transform: rotate(90deg); }
+.nav-accordion[aria-expanded="true"] { color: var(--text-2); }
+.nav-accordion-label { flex: 1; text-align: left; }
+.nav-accordion-count { color: var(--muted-2); font-variant-numeric: tabular-nums; }
+.nav-hidden { display: flex; flex-direction: column; }
+.nav-hidden[hidden] { display: none; }
+
 /* ── rail blocks ── */
 .rail-block {
   padding: 14px var(--pad);

@@ -22,58 +22,69 @@
       </header>
 
       <nav class="nav" id="nav">
-        <a href="#foryou"    class="nav-item active" data-section="foryou">
-          <span class="nav-key">01</span><span class="nav-name">for you</span>
-          <span class="nav-count" data-count="foryou">—</span>
-        </a>
-        <a href="#trending"  class="nav-item" data-section="trending">
-          <span class="nav-key">02</span><span class="nav-name">trending</span>
-          <span class="nav-count" data-count="trending">—</span>
-        </a>
-        <a href="#drafts"    class="nav-item" data-section="drafts">
-          <span class="nav-key">03</span><span class="nav-name">drafts</span>
+        <!-- pinned tabs -->
+        <a href="#drafts"    class="nav-item active" data-section="drafts">
+          <span class="nav-key">01</span><span class="nav-name">drafts</span>
           <span class="nav-count" data-count="drafts">—</span>
         </a>
-        <a href="#compose"   class="nav-item" data-section="compose">
-          <span class="nav-key">04</span><span class="nav-name">compose</span>
-          <span class="nav-count">new</span>
-        </a>
-        <a href="#scheduled" class="nav-item" data-section="scheduled">
-          <span class="nav-key">05</span><span class="nav-name">scheduled</span>
-          <span class="nav-count" data-count="scheduled">—</span>
-        </a>
-        <a href="#history"   class="nav-item" data-section="history">
-          <span class="nav-key">06</span><span class="nav-name">history</span>
-          <span class="nav-count" data-count="history">—</span>
-        </a>
         <a href="#agent"     class="nav-item" data-section="agent">
-          <span class="nav-key">07</span><span class="nav-name">agent</span>
+          <span class="nav-key">02</span><span class="nav-name">agent</span>
           <span class="nav-count">edit</span>
         </a>
-        <a href="#blog"      class="nav-item" data-section="blog">
-          <span class="nav-key">08</span><span class="nav-name">blog ideas</span>
-          <span class="nav-count" data-count="blog">—</span>
-        </a>
-        <a href="#studio"    class="nav-item" data-section="studio">
-          <span class="nav-key">09</span><span class="nav-name">blog studio</span>
-          <span class="nav-count" data-count="studio">—</span>
-        </a>
-        <a href="#linkedin-ideas"  class="nav-item" data-section="linkedin-ideas">
-          <span class="nav-key">10</span><span class="nav-name">linkedin ideas</span>
-          <span class="nav-count" data-count="linkedin-ideas">—</span>
-        </a>
-        <a href="#linkedin-drafts" class="nav-item" data-section="linkedin-drafts">
-          <span class="nav-key">11</span><span class="nav-name">linkedin drafts</span>
-          <span class="nav-count" data-count="linkedin-drafts">—</span>
-        </a>
         <a href="#evals" class="nav-item" data-section="evals">
-          <span class="nav-key">12</span><span class="nav-name">evals</span>
+          <span class="nav-key">03</span><span class="nav-name">evals</span>
           <span class="nav-count" data-count="evals">—</span>
         </a>
         <a href="#analytics" class="nav-item" data-section="analytics">
-          <span class="nav-key">13</span><span class="nav-name">analytics</span>
+          <span class="nav-key">04</span><span class="nav-name">analytics</span>
           <span class="nav-count" data-count="analytics">—</span>
         </a>
+
+        <!-- hidden tabs: collapsed accordion -->
+        <button type="button" class="nav-accordion" id="nav-hidden-toggle"
+                aria-expanded="false" aria-controls="nav-hidden">
+          <span class="nav-accordion-caret">▸</span>
+          <span class="nav-accordion-label">hidden tabs</span>
+          <span class="nav-accordion-count">9</span>
+        </button>
+        <div class="nav-hidden" id="nav-hidden" hidden>
+          <a href="#foryou"    class="nav-item" data-section="foryou">
+            <span class="nav-key">05</span><span class="nav-name">for you</span>
+            <span class="nav-count" data-count="foryou">—</span>
+          </a>
+          <a href="#trending"  class="nav-item" data-section="trending">
+            <span class="nav-key">06</span><span class="nav-name">trending</span>
+            <span class="nav-count" data-count="trending">—</span>
+          </a>
+          <a href="#compose"   class="nav-item" data-section="compose">
+            <span class="nav-key">07</span><span class="nav-name">compose</span>
+            <span class="nav-count">new</span>
+          </a>
+          <a href="#scheduled" class="nav-item" data-section="scheduled">
+            <span class="nav-key">08</span><span class="nav-name">scheduled</span>
+            <span class="nav-count" data-count="scheduled">—</span>
+          </a>
+          <a href="#history"   class="nav-item" data-section="history">
+            <span class="nav-key">09</span><span class="nav-name">history</span>
+            <span class="nav-count" data-count="history">—</span>
+          </a>
+          <a href="#blog"      class="nav-item" data-section="blog">
+            <span class="nav-key">10</span><span class="nav-name">blog ideas</span>
+            <span class="nav-count" data-count="blog">—</span>
+          </a>
+          <a href="#studio"    class="nav-item" data-section="studio">
+            <span class="nav-key">11</span><span class="nav-name">blog studio</span>
+            <span class="nav-count" data-count="studio">—</span>
+          </a>
+          <a href="#linkedin-ideas"  class="nav-item" data-section="linkedin-ideas">
+            <span class="nav-key">12</span><span class="nav-name">linkedin ideas</span>
+            <span class="nav-count" data-count="linkedin-ideas">—</span>
+          </a>
+          <a href="#linkedin-drafts" class="nav-item" data-section="linkedin-drafts">
+            <span class="nav-key">13</span><span class="nav-name">linkedin drafts</span>
+            <span class="nav-count" data-count="linkedin-drafts">—</span>
+          </a>
+        </div>
       </nav>
 
       <section class="rail-block">
@@ -152,12 +163,12 @@
       <!-- DRAFTS -->
       <section class="section hidden" id="section-drafts">
         <div class="tab-bar" id="draft-tabs">
-          <button class="tab-btn active" data-tab="posts">posts<span class="tab-count" data-count="posts">—</span></button>
-          <button class="tab-btn"        data-tab="replies">replies<span class="tab-count" data-count="replies">—</span></button>
+          <button class="tab-btn active" data-tab="replies">replies<span class="tab-count" data-count="replies">—</span></button>
           <button class="tab-btn"        data-tab="quotes">quote-tweets<span class="tab-count" data-count="quotes">—</span></button>
+          <button class="tab-btn"        data-tab="posts">posts<span class="tab-count" data-count="posts">—</span></button>
         </div>
-        <div class="grid-drafts" id="list-posts"></div>
-        <div class="grid-drafts hidden" id="list-replies"></div>
+        <div class="grid-drafts hidden" id="list-posts"></div>
+        <div class="grid-drafts" id="list-replies"></div>
         <div class="grid-drafts hidden" id="list-quotes"></div>
       </section>
 

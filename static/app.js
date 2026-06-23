@@ -195,6 +195,8 @@ setInterval(() => pingServer(), 20000);
 function showSection(name) {
   $$(".section").forEach(s => s.classList.toggle("hidden", s.id !== `section-${name}`));
   $$(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.section === name));
+  // keep the active tab visible: open the accordion if it lives behind it
+  if (HIDDEN_SECTIONS.has(name)) setHiddenNav(true);
   const meta = SECTION_META[name] || { title: name, sub: "" };
   els.sectionTitle.textContent = meta.title;
   els.sectionSub.textContent = meta.sub;
@@ -217,6 +219,20 @@ $$(".nav-item").forEach(n => {
     history.replaceState(null, "", `#${n.dataset.section}`);
   });
 });
+
+// ─────────────────── hidden-tabs accordion ───────────────────
+const navHiddenToggle = $("#nav-hidden-toggle");
+const navHiddenPanel  = $("#nav-hidden");
+// sections that live behind the collapsed "hidden tabs" accordion
+const HIDDEN_SECTIONS = new Set(
+  navHiddenPanel ? $$(".nav-item", navHiddenPanel).map(n => n.dataset.section) : []
+);
+function setHiddenNav(open) {
+  if (!navHiddenPanel || !navHiddenToggle) return;
+  navHiddenPanel.hidden = !open;
+  navHiddenToggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+navHiddenToggle?.addEventListener("click", () => setHiddenNav(navHiddenPanel.hidden));
 
 // ─────────────────── interest signature ───────────────────
 
@@ -3974,6 +3990,6 @@ setupCompose();
 setupBlog();
 setupLinkedin();
 setupThumbModal();
-const initialHash = (location.hash || "#foryou").slice(1);
+const initialHash = (location.hash || "#drafts").slice(1);
 if (SECTION_META[initialHash]) showSection(initialHash);
 pingServer().then(() => load());
