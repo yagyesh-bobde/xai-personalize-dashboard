@@ -37,6 +37,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import blog as blog_mod
+import analytics
 import eval_engine
 import feedback as feedback_mod
 import linkedin as linkedin_mod
@@ -744,6 +745,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send_json(500, {"error": str(e)})
 
+        if path == "/analytics":
+            try:
+                return self._send_json(200, analytics.overview())
+            except Exception as e:
+                return self._send_json(500, {"error": str(e)})
+
         if path == "/agent":
             if not AGENT_MD.exists():
                 return self._send_json(404, {"error": f"agent file not found: {AGENT_MD}"})
@@ -917,6 +924,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(200 if res.get("ok") else 404, res)
             except Exception as e:
                 return self._send_json(500, {"ok": False, "error": str(e)})
+
+        if path == "/analytics/run":
+            try:
+                return self._send_json(200, analytics.run_analytics(force=True))
+            except Exception as e:
+                return self._send_json(500, {"error": str(e)})
 
         if path == "/bookmark":
             tweet_id = str(body.get("id") or "").strip()
