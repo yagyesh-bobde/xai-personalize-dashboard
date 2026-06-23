@@ -575,21 +575,19 @@ function makeDraftCard(draft, kind) {
   postBtn.addEventListener("click", doPost);
   queueBtn.addEventListener("click", doQueue);
   schedBtn.addEventListener("click", doSchedule);
-  discardBtn.addEventListener("click", () => {
-    wrap.classList.add("discarded");
-    textarea.disabled = true;
+  // Discard and mark-posted both retire the draft: record the eval signal,
+  // persist its removal from dashboard_data.json (so it doesn't return on
+  // reload/refresh), then drop the card from the UI.
+  const retireDraft = async (signal, doneToast) => {
     setDisabled(true);
+    sendFeedback(signal);                          // eval signal (best-effort)
+    if (!(await removeDraftServerSide(kind, draft.id))) { setDisabled(false); return; }
     queueButtons.delete(queueBtn);
-    sendFeedback("discard");
-  });
-  markBtn.addEventListener("click", () => {
-    sendFeedback("mark_posted");
-    wrap.classList.add("posted");
-    textarea.disabled = true;
-    setDisabled(true);
-    queueButtons.delete(queueBtn);
-    toast("marked as posted ✓", "ok");
-  });
+    dropDraftCard(wrap, kind, draft.id);
+    toast(doneToast, "ok");
+  };
+  discardBtn.addEventListener("click", () => retireDraft("discard", "discarded"));
+  markBtn.addEventListener("click", () => retireDraft("mark_posted", "marked as posted ✓"));
   likeBtn.addEventListener("click", () => {
     sendFeedback("like");
     likeBtn.classList.add("done");
@@ -674,6 +672,54 @@ function attachClipboardImages(targetEl, tray, { getCount, max = 4, onAttach }) 
   targetEl.addEventListener("dragover", (e) => {
     if ((e.dataTransfer?.items || []).length) e.preventDefault();
   });
+}
+
+// kind ("post"/"reply"/"quote") → key inside data.drafts and the count badges
+const DRAFT_KIND_KEY = { post: "posts", reply: "replies", quote: "quotes" };
+
+function removeDraftFromState(kind, id) {
+  const key = DRAFT_KIND_KEY[kind];
+  const drafts = state.data && state.data.drafts;
+  if (key && drafts && Array.isArray(drafts[key])) {
+    drafts[key] = drafts[key].filter(d => String(d.id) !== String(id));
+  }
+}
+
+function decrementDraftCount(kind) {
+  const dec = (sel) => {
+    const node = document.querySelector(`[data-count="${sel}"]`);
+    if (node) node.textContent = String(Math.max(0, (parseInt(node.textContent, 10) || 0) - 1));
+  };
+  dec("drafts");
+  if (DRAFT_KIND_KEY[kind]) dec(DRAFT_KIND_KEY[kind]);
+}
+
+// Persist a draft removal server-side so it doesn't return on reload/refresh.
+async function removeDraftServerSide(kind, id) {
+  try {
+    const res = await fetch("/draft/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, id }),
+    });
+    const data = await res.json();
+    if (!data.ok) { toast(`failed: ${data.error || "?"}`, "error"); return false; }
+    return true;
+  } catch (e) {
+    toast(`error: ${e.message}`, "error");
+    return false;
+  }
+}
+
+// Remove a draft card from the DOM + in-memory state and fix the counts.
+function dropDraftCard(wrap, kind, id) {
+  removeDraftFromState(kind, id);
+  const container = wrap.parentElement;
+  wrap.remove();
+  if (container && !container.querySelector(".draft")) {
+    container.appendChild(empty(`no ${kind} drafts — refresh to generate.`));
+  }
+  decrementDraftCount(kind);
 }
 
 function renderDrafts(drafts) {
@@ -3698,9 +3744,17 @@ if (evalRunBtn) {
     try {
       const res = await (await fetch("/eval/run", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: "{}" })).json();
-      if (res.skipped) toast(`eval skipped (${res.skipped})`, "");
-      else toast("eval done ✓", "ok");
+      if (res.skipped) { toast(`eval skipped (${res.skipped})`, ""); loadEvals(); return; }
       loadEvals();
+      if (!res.voice_changed) { toast("eval done ✓ (voice unchanged)", "ok"); return; }
+      // Voice changed → the current drafts were written by the old voice. Clear
+      // them and regenerate a fresh set to review/post/discard against the new
+      // voice (that feedback feeds the next eval). Reuse refresh() so the user
+      // gets the same full-screen overlay + render the main refresh button uses
+      // — the regen takes a few minutes and must look like it's working.
+      toast("voice updated — regenerating all drafts…", "ok");
+      showSection("drafts");                  // land on the new set once it renders
+      await refresh();                        // overlay + POST /refresh + render + error handling
     } catch (e) {
       toast(`eval failed: ${e.message}`, "error");
     } finally {

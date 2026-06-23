@@ -110,6 +110,39 @@ def save_json(path: Path, obj):
         tmp.replace(path)
 
 
+# X draft kind → list key inside dashboard_data.json["drafts"]
+DRAFT_KIND_KEYS = {"post": "posts", "reply": "replies", "quote": "quotes"}
+
+
+def remove_draft_from_data(kind, draft_id, path: Path = DATA) -> dict:
+    """Persistently remove an X draft from dashboard_data.json so it does not
+    reappear on reload/refresh. Used for both discard and mark-posted (the
+    good/bad signal is recorded separately via /feedback). Idempotent;
+    returns {ok, removed}."""
+    key = DRAFT_KIND_KEYS.get(kind)
+    if not key:
+        return {"ok": False, "error": f"unknown kind: {kind}"}
+    draft_id = str(draft_id or "").strip()
+    if not draft_id:
+        return {"ok": False, "error": "missing draft id"}
+    with _file_lock:
+        try:
+            data = json.loads(path.read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {"ok": False, "error": "no dashboard data"}
+        drafts = data.get("drafts") or {}
+        lst = drafts.get(key) or []
+        kept = [d for d in lst if str(d.get("id")) != draft_id]
+        removed = len(lst) - len(kept)
+        if removed:
+            drafts[key] = kept
+            data["drafts"] = drafts
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+            tmp.replace(path)
+        return {"ok": True, "removed": removed}
+
+
 def run_pipeline() -> tuple[bool, str]:
     if not _refresh_lock.acquire(blocking=False):
         return False, "refresh already in progress"
@@ -860,9 +893,21 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send_json(500, {"ok": False, "error": str(e)})
 
+        if path in ("/draft/remove", "/draft/discard"):
+            try:
+                res = remove_draft_from_data(body.get("kind"), body.get("id"))
+                return self._send_json(200 if res.get("ok") else 400, res)
+            except Exception as e:
+                return self._send_json(500, {"ok": False, "error": str(e)})
+
         if path == "/eval/run":
             try:
-                return self._send_json(200, eval_engine.run_eval(force=True))
+                run = eval_engine.run_eval(force=True)
+                # Signal whether the voice prompt actually changed; if so the
+                # client regenerates the whole draft set (the old drafts were
+                # produced by the pre-eval voice and are now stale).
+                run = {**run, "voice_changed": eval_engine.voice_changed(run)}
+                return self._send_json(200, run)
             except Exception as e:
                 return self._send_json(500, {"ok": False, "error": str(e)})
 

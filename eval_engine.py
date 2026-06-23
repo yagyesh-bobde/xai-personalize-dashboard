@@ -119,8 +119,13 @@ def run_eval(force=False, now=None, caller=None) -> dict:
         if not ok:
             return {"skipped": reason}
 
-    good = [e for e in events if e.get("signal") == "good"][-MAX_EXAMPLES:]
-    bad = [e for e in events if e.get("signal") == "bad"][-MAX_EXAMPLES:]
+    # Fresh-per-cycle: only learn from feedback gathered since the last eval, so
+    # each eval evaluates the draft set produced after the previous one (the old
+    # set's feedback is considered consumed once an eval has run on it).
+    last_ts = runs[-1]["ts"] if runs else None
+    fresh = [e for e in events if not last_ts or (e.get("ts") or "") > last_ts]
+    good = [e for e in fresh if e.get("signal") == "good"][-MAX_EXAMPLES:]
+    bad = [e for e in fresh if e.get("signal") == "bad"][-MAX_EXAMPLES:]
     state = voice_state.load_state()
     caller = caller or _default_caller
 
@@ -138,7 +143,6 @@ def run_eval(force=False, now=None, caller=None) -> dict:
 
     added = {k: [x for x in new_state[k] if x not in state.get(k, [])]
              for k in voice_state.KEYS}
-    last_ts = runs[-1]["ts"] if runs else None
     run = {
         "id": now.strftime("%Y%m%dT%H%M%S"),
         "ts": now.isoformat(),
@@ -166,6 +170,14 @@ def revert_eval(run_id, now=None) -> dict:
             _save_runs(runs)
             return {"ok": True, "id": run_id}
     return {"ok": False, "error": "not found or already reverted"}
+
+
+def voice_changed(run) -> bool:
+    """True iff an eval run actually altered the learned voice state (added any
+    gold/anti example or rule) — i.e. the drafting prompt is now different."""
+    if not run or "skipped" in run:
+        return False
+    return any((run.get("added") or {}).values())
 
 
 def overview() -> dict:

@@ -80,6 +80,26 @@ def test_claude_failure_returns_skip():
     assert res == {"skipped": "claude_failed"}
 
 
+def test_eval_only_learns_from_feedback_since_last_run():
+    """Fresh-per-cycle: a second eval must learn only from feedback recorded
+    after the first eval, not the whole rolling history."""
+    _wire()
+    _seed_events(3, 2)                                  # 5 events before eval #1
+    r1 = EE.run_eval(force=True, caller=lambda p: {"conclusion": "a"})
+    assert r1["counts"]["good"] == 3 and r1["counts"]["bad"] == 2
+    _seed_events(1, 4)                                  # new feedback after eval #1
+    r2 = EE.run_eval(force=True, caller=lambda p: {"conclusion": "b"})
+    assert r2["counts"]["good"] == 1                    # only the post-eval good
+    assert r2["counts"]["bad"] == 4                     # only the post-eval bad
+
+
+def test_voice_changed_flag():
+    assert EE.voice_changed({"added": {"gold": ["x"], "anti": [], "rules": []}}) is True
+    assert EE.voice_changed({"added": {"gold": [], "anti": [], "rules": []}}) is False
+    assert EE.voice_changed({"skipped": "cadence"}) is False
+    assert EE.voice_changed(None) is False
+
+
 def test_revert_restores_prior_state():
     _wire()
     VS.save_state({"gold": ["before"], "anti": [], "rules": []})
