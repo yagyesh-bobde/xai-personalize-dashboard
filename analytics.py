@@ -160,3 +160,81 @@ def _default_fetcher():
     if isinstance(res, dict):
         return res.get("data") or []
     return res or []
+
+
+def _avg(nums):
+    nums = list(nums)
+    return sum(nums) / len(nums) if nums else 0.0
+
+
+def _group(recs, keyfn):
+    out = {}
+    for r in recs:
+        k = keyfn(r)
+        out.setdefault(k, []).append(r)
+    return {str(k): {"avg_eng_rate": round(_avg(x["eng_rate"] for x in v), 4),
+                     "avg_views": round(_avg(x["views"] for x in v), 1),
+                     "count": len(v)}
+            for k, v in out.items()}
+
+
+def compute_report(history: dict, now, window_days=WINDOW_DAYS) -> dict:
+    cutoff = now - timedelta(days=window_days)
+    recs = []
+    for tid, e in history.items():
+        if not e.get("snapshots"):
+            continue
+        created = _parse_iso(e.get("created_at"))
+        if not created or created < cutoff:
+            continue
+        snap = e["snapshots"][-1]
+        recs.append({
+            "id": tid, "text": e.get("text", ""), "kind": e.get("kind", "post"),
+            "has_media": e.get("has_media", False), "has_link": e.get("has_link", False),
+            "created_local": e.get("created_local", ""),
+            "views": snap.get("views", 0), "eng_rate": eng_rate(snap),
+        })
+
+    overall_rate = _avg(r["eng_rate"] for r in recs)
+    breakdowns = {
+        "type":    _group(recs, lambda r: r["kind"]),
+        "media":   _group(recs, lambda r: "with_media" if r["has_media"] else "text_only"),
+        "link":    _group(recs, lambda r: "with_link" if r["has_link"] else "no_link"),
+        "length":  _group(recs, lambda r: classify_length(r["text"])),
+        "hour":    _group(recs, lambda r: local_hour(r["created_local"]) if r["created_local"] else -1),
+        "weekday": _group(recs, lambda r: local_weekday(r["created_local"]) if r["created_local"] else -1),
+    }
+
+    # keyword lift
+    tok_rates = {}
+    for r in recs:
+        for tok in set(tokenize(r["text"])):
+            tok_rates.setdefault(tok, []).append(r["eng_rate"])
+    keywords = []
+    for tok, rates in tok_rates.items():
+        if len(rates) < MIN_SUPPORT:
+            continue
+        avg = _avg(rates)
+        keywords.append({"token": tok, "support": len(rates),
+                         "avg_eng_rate": round(avg, 4),
+                         "lift": round(avg / overall_rate, 2) if overall_rate else 0.0})
+    keywords.sort(key=lambda k: k["lift"], reverse=True)
+
+    ranked = sorted((r for r in recs if r["views"] >= MIN_VIEWS),
+                    key=lambda r: r["eng_rate"], reverse=True)
+
+    def card(r):
+        return {"id": r["id"], "text": r["text"], "kind": r["kind"],
+                "eng_rate": round(r["eng_rate"], 4), "views": r["views"],
+                "created_local": r["created_local"]}
+
+    return {
+        "n_posts": len(recs),
+        "metric": "engagement_rate",
+        "overall": {"avg_eng_rate": round(overall_rate, 4),
+                    "avg_views": round(_avg(r["views"] for r in recs), 1)},
+        "breakdowns": breakdowns,
+        "keywords": keywords[:20],
+        "top": [card(r) for r in ranked[:5]],
+        "bottom": [card(r) for r in ranked[-5:][::-1]],
+    }

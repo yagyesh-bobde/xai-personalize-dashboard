@@ -100,6 +100,53 @@ def test_snapshot_drops_out_of_window_posts():
     assert hist == {}
 
 
+def _hist_entry(text, views, likes, created_iso, created_local,
+                kind="post", media=False, link=False, ts="2026-06-24T12:00:00+00:00"):
+    return {
+        "created_at": created_iso, "created_local": created_local, "kind": kind,
+        "source": "manual", "text": text, "has_media": media, "has_link": link,
+        "lang": "en",
+        "snapshots": [{"ts": ts, "likes": likes, "retweets": 0, "replies": 0,
+                       "quotes": 0, "views": views, "bookmarks": 0}],
+    }
+
+
+def test_compute_report_breakdowns_and_ranking():
+    now = datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc)
+    hist = {
+        "hi": _hist_entry("agent agent agent winner", 100, 30, "2026-06-23T10:00:00+00:00", "2026-06-23 15:30"),
+        "lo": _hist_entry("agent dull loser", 100, 1, "2026-06-22T10:00:00+00:00", "2026-06-22 09:30"),
+        "mid": _hist_entry("agent middle road", 100, 10, "2026-06-21T10:00:00+00:00", "2026-06-21 18:30"),
+    }
+    rep = AN.compute_report(hist, now)
+    assert rep["n_posts"] == 3
+    assert rep["top"][0]["id"] == "hi"
+    assert rep["bottom"][0]["id"] == "lo"
+    # "agent" appears in all 3 (support 3) → present in keywords
+    assert any(k["token"] == "agent" and k["support"] == 3 for k in rep["keywords"])
+    assert "post" in rep["breakdowns"]["type"]
+    assert rep["breakdowns"]["type"]["post"]["count"] == 3
+
+
+def test_compute_report_drops_low_view_posts_from_ranking():
+    now = datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc)
+    hist = {
+        "tiny": _hist_entry("agent low reach high rate", 5, 5, "2026-06-23T10:00:00+00:00", "2026-06-23 15:30"),
+        "real": _hist_entry("agent real reach", 200, 20, "2026-06-23T11:00:00+00:00", "2026-06-23 16:30"),
+    }
+    rep = AN.compute_report(hist, now)
+    ids = [p["id"] for p in rep["top"]]
+    assert "tiny" not in ids            # below MIN_VIEWS floor
+    assert "real" in ids
+
+
+def test_compute_report_window_excludes_old():
+    now = datetime(2026, 6, 24, 12, 0, tzinfo=timezone.utc)
+    hist = {"old": _hist_entry("agent ancient", 100, 5, "2026-04-01T10:00:00+00:00", "2026-04-01 15:30")}
+    rep = AN.compute_report(hist, now)
+    assert rep["n_posts"] == 0
+
+
 if __name__ == "__main__":
     import traceback
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
