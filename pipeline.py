@@ -881,6 +881,15 @@ def main():
                   f"/ +rules {len(a.get('rules', []))})", flush=True)
     except Exception as e:
         sys.stderr.write(f"[pipeline] eval failed (non-fatal): {e}\n")
+    try:
+        import analytics
+        an = analytics.run_analytics()
+        if an.get("skipped"):
+            print(f"[pipeline] analytics skipped ({an['skipped']})", flush=True)
+        else:
+            print(f"[pipeline] analytics ran (n_posts={an.get('n_posts')})", flush=True)
+    except Exception as e:
+        sys.stderr.write(f"[pipeline] analytics failed (non-fatal): {e}\n")
     drafts = generate_drafts(sig, mine, curated, trending, history=history)
     if not (drafts.get("posts") or drafts.get("replies") or drafts.get("quotes")):
         drafts = fallback_drafts(curated)
