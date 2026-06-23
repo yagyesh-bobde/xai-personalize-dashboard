@@ -1197,67 +1197,197 @@ async function loadEvals() {
 
 // ─────────────────── analytics (13) ───────────────────
 
+// ─────────────────── analytics screen ───────────────────
+const AN_WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const anPct = v => (v * 100).toFixed(1) + "%";
+const anNum = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(Math.round(n || 0));
+
+function anHeader(title, note) {
+  return el("div", { class: "an-h" }, [
+    el("span", { class: "an-h-mark" }, "//"),
+    el("span", { class: "an-h-title" }, title),
+    note ? el("span", { class: "an-h-note" }, note) : null,
+  ]);
+}
+
+function anSection(title, note, content) {
+  return el("div", { class: "an-sec" }, [anHeader(title, note), content]);
+}
+
+function anStat(num, label) {
+  return el("div", { class: "an-stat" }, [
+    el("div", { class: "an-stat-num" }, num),
+    el("div", { class: "an-stat-label" }, label),
+  ]);
+}
+
+function anThemeCol(label, items, tone) {
+  const tags = (items && items.length ? items : ["nothing clear yet"])
+    .map(t => el("span", { class: "an-tag " + tone }, t));
+  return el("div", { class: "an-theme-col" }, [
+    el("div", { class: "an-theme-h" }, [el("span", { class: "an-dot " + tone }), el("span", {}, label)]),
+    el("div", { class: "an-theme-tags" }, tags),
+  ]);
+}
+
+function anCallout(tag, text) {
+  return el("div", { class: "an-callout" }, [
+    el("span", { class: "an-callout-tag" }, tag),
+    el("span", { class: "an-callout-text" }, text),
+  ]);
+}
+
+// vertical bar chart (timing) — bar height ∝ engagement rate, best bucket highlighted
+function anVBars(title, obj, opts = {}) {
+  const entries = Object.entries(obj || {}).sort((a, b) => Number(a[0]) - Number(b[0]));
+  const max = Math.max(0.0001, ...entries.map(([, v]) => v.avg_eng_rate));
+  const chart = el("div", { class: "an-vchart" }, entries.map(([k, v]) => {
+    const h = Math.max(3, Math.round(v.avg_eng_rate / max * 100));
+    const tip = `${opts.tip ? opts.tip(k) : k} · ${anPct(v.avg_eng_rate)} eng · ${anNum(v.avg_views)} views · n=${v.count}`;
+    return el("div", { class: "an-vcol" + (v.avg_eng_rate === max ? " best" : ""), title: tip }, [
+      el("div", { class: "an-vbar-track" }, [el("div", { class: "an-vbar-fill", style: `height:${h}%` })]),
+      el("div", { class: "an-vcol-label" }, opts.axis ? opts.axis(k) : k),
+    ]);
+  }));
+  return el("div", { class: "an-panel" }, [el("div", { class: "an-fmt-h" }, title), chart]);
+}
+
+// horizontal comparison bars within a small format panel
+function anHBars(title, obj, order) {
+  let entries = Object.entries(obj || {});
+  if (order) entries.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
+  else entries.sort((a, b) => b[1].avg_eng_rate - a[1].avg_eng_rate);
+  const max = Math.max(0.0001, ...entries.map(([, v]) => v.avg_eng_rate));
+  const rows = entries.map(([k, v]) => {
+    const w = Math.max(6, Math.round(v.avg_eng_rate / max * 100));
+    return el("div", { class: "an-hrow" }, [
+      el("span", { class: "an-hrow-label" }, k.replace(/_/g, " ")),
+      el("div", { class: "an-hbar-track" }, [el("div", { class: "an-hbar-fill", style: `width:${w}%` })]),
+      el("span", { class: "an-hrow-val" }, anPct(v.avg_eng_rate)),
+      el("span", { class: "an-hrow-n" }, "n=" + v.count),
+    ]);
+  });
+  return el("div", { class: "an-panel an-fmt" }, [el("div", { class: "an-fmt-h" }, title), ...rows]);
+}
+
+function anPostCard(c, tone) {
+  return el("a", {
+    class: "an-post", href: `https://x.com/i/status/${c.id}`, target: "_blank", rel: "noopener noreferrer",
+  }, [
+    el("div", { class: "an-post-top" }, [
+      el("span", { class: "an-post-eng " + tone }, anPct(c.eng_rate)),
+      el("span", { class: "an-post-kind" }, c.kind),
+      el("span", { class: "an-post-views" }, anNum(c.views) + " views"),
+      el("span", { class: "an-post-open" }, "↗"),
+    ]),
+    el("div", { class: "an-post-text" }, c.text || "(no text)"),
+  ]);
+}
+
+function anPostCol(label, arr, tone) {
+  const cards = (arr && arr.length ? arr : []).map(c => anPostCard(c, tone));
+  return el("div", { class: "an-postcol" }, [
+    el("div", { class: "an-fmt-h" }, label),
+    ...(cards.length ? cards : [el("div", { class: "an-post-empty" }, "not enough reach to rank yet")]),
+  ]);
+}
+
 async function loadAnalytics() {
   const meta = $("#analytics-meta");
   const body = $("#analytics-body");
-  body.textContent = "loading…";
+  body.innerHTML = "";
+  body.appendChild(el("div", { class: "an-loading" }, "reading your signal…"));
+
   let d;
   try { d = await (await fetch("/analytics")).json(); }
-  catch { body.textContent = "failed to load analytics."; return; }
+  catch { body.innerHTML = ""; body.appendChild(el("div", { class: "an-empty" }, "failed to load analytics.")); return; }
 
   if (!d || !d.generated_at) {
-    body.textContent = "no analysis yet — click “run analysis now”. (History builds up daily.)";
     meta.textContent = "";
+    body.innerHTML = "";
+    body.appendChild(el("div", { class: "an-empty" }, [
+      el("div", { class: "an-empty-big" }, "no analysis yet"),
+      el("div", {}, "hit run analysis now — it deepens with each daily run."),
+    ]));
     return;
   }
-  meta.textContent = `${d.n_posts} posts · ${d.window_days}d window · updated ${new Date(d.generated_at).toLocaleString()} · v1 excludes replies`;
-  body.innerHTML = "";
 
+  meta.innerHTML = "";
+  meta.append(
+    el("b", {}, String(d.n_posts)), el("span", {}, "posts"),
+    el("i", {}, "·"), el("b", {}, d.window_days + "d"), el("span", {}, "window"),
+    el("i", {}, "·"), el("span", {}, "updated " + relTime(d.generated_at)),
+    el("i", {}, "·"), el("span", { class: "an-meta-note" }, "engagement rate · replies excluded"),
+  );
+
+  body.innerHTML = "";
+  const ov = d.overall || {};
+
+  // ── glance strip ──
+  body.appendChild(el("div", { class: "an-stats" }, [
+    anStat(anPct(ov.avg_eng_rate || 0), "avg engagement"),
+    anStat(anNum(ov.avg_views || 0), "avg reach"),
+    anStat(String(d.n_posts), "posts analyzed"),
+    anStat(String((d.keywords || []).length), "signal keywords"),
+  ]));
+
+  // ── what's working (LLM read) ──
   const ins = d.insights;
   if (ins) {
-    const box = el("div", { class: "evals-state" });
-    box.appendChild(el("h4", { class: "evals-h" }, "what's working"));
-    if (ins.themes_working?.length) box.appendChild(el("p", {}, "✅ themes working: " + ins.themes_working.join(", ")));
-    if (ins.themes_flat?.length)    box.appendChild(el("p", {}, "⬇️ falls flat: " + ins.themes_flat.join(", ")));
-    if (ins.timing_insight) box.appendChild(el("p", {}, "🕒 " + ins.timing_insight));
-    if (ins.format_insight) box.appendChild(el("p", {}, "✍️ " + ins.format_insight));
-    (ins.recommendations || []).forEach(r => box.appendChild(el("p", {}, "→ " + r)));
-    body.appendChild(box);
+    const panel = el("div", { class: "an-insights" });
+    panel.appendChild(el("div", { class: "an-themes" }, [
+      anThemeCol("resonating", ins.themes_working, "good"),
+      anThemeCol("falling flat", ins.themes_flat, "bad"),
+    ]));
+    const calls = [];
+    if (ins.timing_insight) calls.push(anCallout("timing", ins.timing_insight));
+    if (ins.format_insight) calls.push(anCallout("format", ins.format_insight));
+    if (calls.length) panel.appendChild(el("div", { class: "an-callouts" }, calls));
+    if (ins.recommendations?.length) {
+      panel.appendChild(el("div", { class: "an-recs-label" }, "do next"));
+      panel.appendChild(el("ol", { class: "an-recs" },
+        ins.recommendations.map(r => el("li", { class: "an-rec" }, r))));
+    }
+    body.appendChild(anSection("what's working", "model read on your last " + d.n_posts + " posts", panel));
   }
 
-  const bd = (title, obj) => {
-    const box = el("div", { class: "evals-state" });
-    box.appendChild(el("h4", { class: "evals-h" }, title));
-    Object.entries(obj).sort((a, b) => b[1].avg_eng_rate - a[1].avg_eng_rate)
-      .forEach(([k, v]) => box.appendChild(
-        el("p", {}, `${k}: ${(v.avg_eng_rate * 100).toFixed(1)}% eng · ${Math.round(v.avg_views)} views · n=${v.count}`)));
-    body.appendChild(box);
-  };
-  bd("by type", d.breakdowns.type);
-  bd("by format (media)", d.breakdowns.media);
-  bd("by length", d.breakdowns.length);
-  bd("best hours", d.breakdowns.hour);
-  bd("best weekdays", d.breakdowns.weekday);
+  // ── best times ──
+  const times = el("div", { class: "an-times" }, [
+    anVBars("by hour", d.breakdowns.hour, {
+      axis: k => Number(k) % 3 === 0 ? String(k).padStart(2, "0") : "",
+      tip: k => String(k).padStart(2, "0") + ":00",
+    }),
+    anVBars("by weekday", d.breakdowns.weekday, { axis: k => AN_WD[k] || k, tip: k => AN_WD[k] || k }),
+  ]);
+  body.appendChild(anSection("best times", "engagement by when you post · local time", times));
 
+  // ── format ──
+  const fmt = el("div", { class: "an-fmt-grid" }, [
+    anHBars("post type", d.breakdowns.type),
+    anHBars("media", d.breakdowns.media),
+    anHBars("links", d.breakdowns.link),
+    anHBars("length", d.breakdowns.length, ["short", "medium", "long"]),
+  ]);
+  body.appendChild(anSection("format", "what shape of post lands", fmt));
+
+  // ── keywords ──
   if (d.keywords?.length) {
-    const box = el("div", { class: "evals-state" });
-    box.appendChild(el("h4", { class: "evals-h" }, "keywords working"));
-    d.keywords.slice(0, 15).forEach(k =>
-      box.appendChild(el("p", {}, `${k.token} — ${k.lift}× lift (n=${k.support})`)));
-    body.appendChild(box);
+    const keys = el("div", { class: "an-keys" }, d.keywords.slice(0, 18).map(k => {
+      const cls = k.lift >= 1.2 ? " strong" : k.lift < 1 ? " weak" : "";
+      return el("span", { class: "an-key" + cls, title: `${anPct(k.avg_eng_rate)} eng · n=${k.support}` }, [
+        el("span", { class: "an-key-tok" }, k.token),
+        el("span", { class: "an-key-lift" }, k.lift + "×"),
+      ]);
+    }));
+    body.appendChild(anSection("keywords", "avg engagement lift vs your baseline", el("div", { class: "an-panel" }, keys)));
   }
 
-  const cards = (title, arr) => {
-    const box = el("div", { class: "evals-state" });
-    box.appendChild(el("h4", { class: "evals-h" }, title));
-    (arr || []).forEach(c => {
-      const p = el("p", {}, `${(c.eng_rate * 100).toFixed(1)}% · ${c.views} views · ${c.text.slice(0, 120)}`);
-      box.appendChild(p);
-    });
-    body.appendChild(box);
-  };
-  cards("top posts", d.top);
-  cards("bottom posts", d.bottom);
+  // ── top / bottom posts ──
+  body.appendChild(anSection("top & bottom posts", "ranked by engagement rate (min reach applied)",
+    el("div", { class: "an-posts-grid" }, [
+      anPostCol("top performers", d.top, "good"),
+      anPostCol("lowest performers", d.bottom, "bad"),
+    ])));
 }
 
 function renderHistory() {
